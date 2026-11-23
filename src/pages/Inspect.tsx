@@ -9,7 +9,9 @@ import { ArrowLeft, Check, CheckCircle2, Cloud, FileText, Minus, Plus, Ruler, Tr
 import { TopBar } from '../components/AppShell';
 import { DefectSheet } from '../components/DefectSheet';
 import { SEVERITY_STYLE, Spinner, VerdictBadge, useObjectUrl } from '../components/ui';
-import { CATEGORIES, CHECKLIST, DEFECTS, defectByCode, type DefectType } from '../lib/defects';
+import { OTHER_DEFECT, defectName, type CheckSection, type DefectType } from '../lib/defects';
+import { categoriesOf, checklistOf, defectsOf } from '../lib/templates';
+import { uid } from '../lib/db';
 import { db, type Inspection, type Photo } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { addDefect, completeInspection, removeDefect, updateInspection } from '../lib/repo';
@@ -35,7 +37,7 @@ export function Inspect() {
   const counts = tally(insp.defects);
   const outOfTol = insp.measurements.reduce((n, m) => n + m.values.filter((v) => v != null && Math.abs(v - m.spec) > m.tol).length, 0);
   const readingsDone = insp.measurements.every((m) => m.values.every((v) => v != null));
-  const checklistDone = CHECKLIST.every((c) => insp.checklist[c.id]);
+  const checklistDone = checklistOf(insp).every((c) => insp.checklist[c.id]);
   const steps: { key: Tab; label: string; done: boolean; badge?: number }[] = [
     { key: 'defects', label: t('defects'), done: insp.inspected >= insp.plan.sampleSize || insp.verdict === 'fail', badge: insp.defects.length },
     { key: 'measure', label: t('measure'), done: readingsDone, badge: outOfTol },
@@ -179,11 +181,12 @@ function VerdictPanel({ insp, counts }: { insp: Inspection; counts: ReturnType<t
 }
 
 function DefectsTab({ insp }: { insp: Inspection }) {
-  const { t, pick } = useI18n();
+  const { t, pick, lang } = useI18n();
   const [active, setActive] = useState<DefectType | null>(null);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const matches = q ? DEFECTS.filter((d) => `${d.code} ${d.en} ${d.bn}`.toLowerCase().includes(q)) : [];
+  const library = defectsOf(insp);
+  const matches = q ? library.filter((d) => `${d.code} ${d.en} ${d.bn}`.toLowerCase().includes(q)) : [];
   const counts = new Map<string, number>();
   for (const d of insp.defects) counts.set(d.code, (counts.get(d.code) ?? 0) + d.qty);
   const editable = insp.status === 'draft';
@@ -219,11 +222,11 @@ function DefectsTab({ insp }: { insp: Inspection }) {
       )}
       {editable &&
         !q &&
-        CATEGORIES.map((cat) => (
+        categoriesOf(insp).map((cat) => (
           <section key={cat.id}>
             <h3 className="mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">{pick(cat)}</h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {DEFECTS.filter((d) => d.category === cat.id).map((d) => {
+              {library.filter((d) => d.category === cat.id).map((d) => {
                 const c = counts.get(d.code) ?? 0;
                 const st = SEVERITY_STYLE[d.severity];
                 return (
@@ -244,6 +247,12 @@ function DefectsTab({ insp }: { insp: Inspection }) {
           </section>
         ))}
 
+      {editable && (
+        <button onClick={() => setActive(OTHER_DEFECT)} className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-ink-300 p-3.5 text-sm font-semibold text-ink-600 transition hover:border-ink-500">
+          <Plus className="size-4" /> Other defect — describe it yourself
+        </button>
+      )}
+
       <section>
         <h3 className="mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">{t('loggedDefects')}</h3>
         {insp.defects.length === 0 ? (
@@ -251,14 +260,13 @@ function DefectsTab({ insp }: { insp: Inspection }) {
         ) : (
           <ul className="card divide-y divide-ink-100">
             {insp.defects.map((d) => {
-              const def = defectByCode.get(d.code);
               const st = SEVERITY_STYLE[d.severity];
               return (
                 <li key={d.id} className="flex items-center gap-3 p-3">
                   <span className={`h-10 w-1 shrink-0 rounded-full ${st.bar}`} />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold">
-                      {def ? pick(def) : d.code} {d.qty > 1 && <span className="text-ink-500">×{d.qty}</span>}
+                      {defectName(d, lang)} {d.qty > 1 && <span className="text-ink-500">×{d.qty}</span>}
                     </div>
                     <div className={`text-xs font-semibold ${st.text}`}>
                       {t(d.severity)}
@@ -286,7 +294,7 @@ function DefectsTab({ insp }: { insp: Inspection }) {
         <DefectSheet
           defect={active}
           onClose={() => setActive(null)}
-          onSave={({ severity, qty, note, files }) => addDefect(insp.id, { code: active.code, severity, qty, note: note || undefined }, files)}
+          onSave={({ severity, qty, note, files, label }) => addDefect(insp.id, { code: active.code, label, severity, qty, note: note || undefined }, files)}
         />
       )}
     </div>
@@ -306,6 +314,7 @@ export function PhotoThumb({ id, size = 'size-9' }: { id: string; size?: string 
 
 function MeasureTab({ insp }: { insp: Inspection }) {
   const editable = insp.status === 'draft';
+  const [editing, setEditing] = useState(false);
   const commit = (mi: number, vi: number, raw: string) => {
     const v = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (v !== null && Number.isNaN(v)) return;
@@ -313,26 +322,77 @@ function MeasureTab({ insp }: { insp: Inspection }) {
       measurements: i.measurements.map((m, k) => (k === mi ? { ...m, values: m.values.map((x, j) => (j === vi ? v : x)) } : m)),
     }));
   };
+  const patchPom = (mi: number, patch: Partial<Inspection['measurements'][number]>) =>
+    updateInspection(insp.id, (i) => ({ measurements: i.measurements.map((m, k) => (k === mi ? { ...m, ...patch } : m)) }));
+  const removePom = (mi: number) => updateInspection(insp.id, (i) => ({ measurements: i.measurements.filter((_, k) => k !== mi) }));
+  const addPom = () =>
+    updateInspection(insp.id, (i) => ({
+      measurements: [...i.measurements, { pom: 'New point of measure', spec: 0, tol: 1, unit: i.measurements[0]?.unit ?? 'cm', values: [null, null, null, null, null] }],
+    }));
+
   return (
     <div className="space-y-3">
-      <p className="flex items-center gap-2 px-1 text-xs text-ink-500">
-        <Ruler className="size-4" /> Measure 5 pieces per point (cm). Values outside tolerance turn red.
-      </p>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <p className="flex items-center gap-2 text-xs text-ink-500">
+          <Ruler className="size-4 shrink-0" /> Measure 5 pieces per point. Values outside tolerance turn red.
+        </p>
+        {editable && (
+          <button className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${editing ? 'bg-ink-900 text-white' : 'bg-white text-ink-700 ring-1 ring-ink-200'}`} onClick={() => setEditing((e) => !e)}>
+            {editing ? 'Done' : 'Edit points'}
+          </button>
+        )}
+      </div>
       {insp.measurements.map((m, mi) => (
-        <section key={m.pom} className="card p-4">
-          <div className="flex items-baseline justify-between">
-            <h4 className="text-sm font-semibold">{m.pom}</h4>
-            <span className="text-xs text-ink-500 tabular-nums">
-              {m.spec} ± {m.tol}
-            </span>
-          </div>
-          <div className="mt-3 grid grid-cols-5 gap-2">
-            {m.values.map((v, vi) => (
-              <MeasureCell key={vi} value={v} spec={m.spec} tol={m.tol} disabled={!editable} onCommit={(raw) => commit(mi, vi, raw)} />
-            ))}
-          </div>
+        <section key={mi} className="card p-4">
+          {editing ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input className="field !py-2 text-sm" defaultValue={m.pom} aria-label="Point of measure" onBlur={(e) => e.target.value.trim() && e.target.value !== m.pom && patchPom(mi, { pom: e.target.value.trim() })} />
+                <button className="grid size-10 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-red-50 hover:text-crit" onClick={() => removePom(mi)} aria-label="Remove point">
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="text-[11px] font-semibold text-ink-500">
+                  Spec
+                  <input className="field !py-2 text-sm" inputMode="decimal" defaultValue={m.spec} onBlur={(e) => !Number.isNaN(Number(e.target.value)) && patchPom(mi, { spec: Number(e.target.value) })} />
+                </label>
+                <label className="text-[11px] font-semibold text-ink-500">
+                  Tolerance ±
+                  <input className="field !py-2 text-sm" inputMode="decimal" defaultValue={m.tol} onBlur={(e) => Number(e.target.value) >= 0 && patchPom(mi, { tol: Number(e.target.value) })} />
+                </label>
+                <label className="text-[11px] font-semibold text-ink-500">
+                  Unit
+                  <select className="field !py-2 text-sm" value={m.unit ?? 'cm'} onChange={(e) => patchPom(mi, { unit: e.target.value as 'cm' | 'mm' | 'g' })}>
+                    <option>cm</option>
+                    <option>mm</option>
+                    <option>g</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <h4 className="text-sm font-semibold">{m.pom}</h4>
+                <span className="shrink-0 text-xs text-ink-500 tabular-nums">
+                  {m.spec} ± {m.tol} {m.unit ?? 'cm'}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-5 gap-2">
+                {m.values.map((v, vi) => (
+                  <MeasureCell key={vi} value={v} spec={m.spec} tol={m.tol} disabled={!editable} onCommit={(raw) => commit(mi, vi, raw)} />
+                ))}
+              </div>
+            </>
+          )}
         </section>
       ))}
+      {editable && (
+        <button onClick={addPom} className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-ink-300 p-3.5 text-sm font-semibold text-ink-600 hover:border-ink-500">
+          <Plus className="size-4" /> Add your own measurement point
+        </button>
+      )}
     </div>
   );
 }
@@ -360,41 +420,103 @@ function MeasureCell({ value, spec, tol, disabled, onCommit }: { value: number |
   );
 }
 
+const SECTION_LABEL: Record<CheckSection, string> = {
+  conformity: 'Product conformity',
+  quantity: 'Quantity',
+  packing: 'Packing & labels',
+  safety: 'Safety',
+  tests: 'Product tests',
+  buyer: 'Buyer requirements',
+};
+
 function ChecklistTab({ insp }: { insp: Inspection }) {
   const { pick } = useI18n();
   const editable = insp.status === 'draft';
+  const [text, setText] = useState('');
+  const [section, setSection] = useState<CheckSection>('tests');
+  const items = checklistOf(insp);
   const set = (key: string, v: 'ok' | 'nok' | 'na') => updateInspection(insp.id, (i) => ({ checklist: { ...i.checklist, [key]: i.checklist[key] === v ? undefined : v } }));
+  const add = async () => {
+    const en = text.trim();
+    if (!en) return;
+    const item = { id: `c-${uid().slice(0, 8)}`, en, bn: en, section };
+    await updateInspection(insp.id, (i) => ({ checklistItems: [...checklistOf(i), item], checklist: { ...i.checklist, [item.id]: undefined } }));
+    setText('');
+  };
+  const remove = (id: string) =>
+    updateInspection(insp.id, (i) => {
+      const { [id]: _drop, ...rest } = i.checklist;
+      void _drop;
+      return { checklistItems: checklistOf(i).filter((c) => c.id !== id), checklist: rest };
+    });
+
   return (
-    <ul className="card divide-y divide-ink-100">
-      {CHECKLIST.map((c) => {
-        const v = insp.checklist[c.id];
-        return (
-          <li key={c.id} className="flex items-center gap-3 p-3">
-            <span className="flex-1 text-sm font-medium">{pick(c)}</span>
-            <div className="flex gap-1">
-              {(
-                [
-                  ['ok', <CheckCircle2 key="o" className="size-5" />, 'bg-brand-600 text-white'],
-                  ['nok', <XCircle key="n" className="size-5" />, 'bg-crit text-white'],
-                  ['na', <span key="na" className="text-xs font-bold">N/A</span>, 'bg-ink-600 text-white'],
-                ] as const
-              ).map(([k, icon, on]) => (
-                <button
-                  key={k}
-                  disabled={!editable}
-                  onClick={() => set(c.id, k)}
-                  aria-pressed={v === k}
-                  aria-label={k}
-                  className={`grid size-10 place-items-center rounded-xl transition ${v === k ? on : 'bg-ink-100 text-ink-400'}`}
-                >
-                  {icon}
-                </button>
+    <div className="space-y-3">
+      {(Object.keys(SECTION_LABEL) as CheckSection[])
+        .filter((sec) => items.some((c) => c.section === sec))
+        .map((sec) => (
+          <section key={sec}>
+            <h3 className="mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">{SECTION_LABEL[sec]}</h3>
+            <ul className="card divide-y divide-ink-100">
+              {items
+                .filter((c) => c.section === sec)
+                .map((c) => {
+                  const v = insp.checklist[c.id];
+                  return (
+                    <li key={c.id} className="flex items-center gap-3 p-3">
+                      <span className="flex-1 text-sm font-medium">
+                        {pick(c)}
+                        {editable && c.id.startsWith('c-') && (
+                          <button className="ml-2 align-middle text-ink-300 hover:text-crit" onClick={() => remove(c.id)} aria-label="Remove check">
+                            <Trash2 className="inline size-3.5" />
+                          </button>
+                        )}
+                      </span>
+                      <div className="flex gap-1">
+                        {(
+                          [
+                            ['ok', <CheckCircle2 key="o" className="size-5" />, 'bg-brand-600 text-white'],
+                            ['nok', <XCircle key="n" className="size-5" />, 'bg-crit text-white'],
+                            ['na', <span key="na" className="text-xs font-bold">N/A</span>, 'bg-ink-600 text-white'],
+                          ] as const
+                        ).map(([k, icon, on]) => (
+                          <button
+                            key={k}
+                            disabled={!editable}
+                            onClick={() => set(c.id, k)}
+                            aria-pressed={v === k}
+                            aria-label={k}
+                            className={`grid size-10 place-items-center rounded-xl transition ${v === k ? on : 'bg-ink-100 text-ink-400'}`}
+                          >
+                            {icon}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          </section>
+        ))}
+      {editable && (
+        <section className="card space-y-2 p-3">
+          <span className="label !mb-0">Add your own check</span>
+          <input className="field !py-2.5" placeholder="e.g. Fabric GSM matches lab report" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void add()} />
+          <div className="flex gap-2">
+            <select className="field !py-2.5 text-sm" value={section} onChange={(e) => setSection(e.target.value as CheckSection)} aria-label="Report section">
+              {(Object.keys(SECTION_LABEL) as CheckSection[]).map((k) => (
+                <option key={k} value={k}>
+                  {SECTION_LABEL[k]}
+                </option>
               ))}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+            </select>
+            <button className="btn-primary shrink-0 !py-2.5" onClick={() => void add()} disabled={!text.trim()}>
+              <Plus className="size-4" /> Add
+            </button>
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -408,8 +530,8 @@ function FinishTab({ insp, outOfTol }: { insp: Inspection; outOfTol: number }) {
   const predicted = overallResult(sections);
   const setSig = (who: 'inspector' | 'factory', dataUrl?: string) =>
     updateInspection(insp.id, (i) => ({ signatures: { ...i.signatures, [who]: dataUrl, signedAt: Date.now() } }));
-  const unanswered = CHECKLIST.filter((c) => !insp.checklist[c.id]).length;
-  const nok = CHECKLIST.filter((c) => insp.checklist[c.id] === 'nok').length;
+  const unanswered = checklistOf(insp).filter((c) => !insp.checklist[c.id]).length;
+  const nok = checklistOf(insp).filter((c) => insp.checklist[c.id] === 'nok').length;
   const sampleDone = insp.inspected >= insp.plan.sampleSize;
   const canComplete = insp.verdict === 'fail' || sampleDone;
 

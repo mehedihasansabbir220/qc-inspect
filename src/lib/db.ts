@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { AqlValue, InspectionLevel, SamplingPlan } from './aql';
-import type { Severity } from './defects';
+import type { ChecklistItem, Severity } from './defects';
 import type { Verdict } from './verdict';
 
 export type InspectionType = 'inline' | 'pre-final' | 'final';
@@ -9,6 +9,8 @@ export type SyncState = 'local' | 'pending' | 'synced' | 'error';
 export interface DefectEntry {
   id: string;
   code: string;
+  /** Inspector's own description (used for "Other" defects). */
+  label?: string;
   severity: Severity;
   qty: number;
   note?: string;
@@ -20,6 +22,7 @@ export interface Measurement {
   pom: string;
   spec: number;
   tol: number;
+  unit?: 'cm' | 'mm' | 'g';
   values: (number | null)[];
 }
 
@@ -53,6 +56,10 @@ export interface Inspection {
   /** Snapshot so the name still shows on devices that don't have this factory in master data. */
   factoryName?: string;
   factoryLocation?: string;
+  /** Inspection template (product type). Missing on records created before templates → apparel. */
+  templateId?: string;
+  /** Snapshot of the checklist at creation, so later template edits never change issued reports. */
+  checklistItems?: ChecklistItem[];
   /** Buyer / client the goods are inspected for (shown on the report cover). */
   buyer?: string;
   /** Factory representative who witnessed the inspection and signs the report. */
@@ -60,12 +67,16 @@ export interface Inspection {
   /** PNG data-URLs captured on screen. Small (~10 KB), so they travel inside the record. */
   signatures?: { inspector?: string; factory?: string; signedAt?: number };
   attachments?: AttachmentMeta[];
+  /** Local-only: when the report was last sent to Google Drive, and the file link. */
+  exportedAt?: number;
+  driveUrl?: string;
   /** Local-only: who owns this record and what this user may do with it. Never pushed. */
   access?: Access;
 }
 
 export interface Access {
-  role: 'owner' | 'shared';
+  /** owner = mine · shared = via a link · team = I'm a QA manager (read-only) */
+  role: 'owner' | 'shared' | 'team';
   ownerEmail?: string;
   canDownload: boolean;
   canEdit: boolean;
@@ -105,7 +116,7 @@ export interface Photo {
 
 export interface OutboxItem {
   id?: number;
-  kind: 'inspection' | 'photo' | 'attachment';
+  kind: 'inspection' | 'photo' | 'attachment' | 'export';
   refId: string;
   attempts: number;
   nextAttemptAt: number;

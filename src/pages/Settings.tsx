@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Cloud, Database, HardDrive, LogOut, RefreshCw, RotateCcw, Wifi, WifiOff, Zap } from 'lucide-react';
+import { Cloud, Database, HardDrive, LogOut, RefreshCw, RotateCcw, Sparkles, Wifi, WifiOff, Zap } from 'lucide-react';
 import { AuthForm } from '../components/AuthForm';
+import { TeamCard } from '../components/TeamCard';
+import { GoogleCard } from '../components/GoogleCard';
 import { cloudEnabled, signOut, useSession } from '../lib/supabase';
 import { Page, TopBar } from '../components/AppShell';
 import { Segmented, Spinner, relativeTime } from '../components/ui';
@@ -22,6 +24,8 @@ export function Settings() {
   const outbox = useLiveQuery(() => db.outbox.orderBy('nextAttemptAt').toArray(), []);
   const serverCount = useLiveQuery(() => serverDb.inspections.count(), []);
   const session = useSession();
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoAdded, setDemoAdded] = useState(false);
 
   useEffect(() => {
     getSetting('inspector', '').then(setInspector);
@@ -82,6 +86,9 @@ export function Settings() {
             <AuthForm intro="Sign in to back up inspections to the cloud and send reports. You can keep inspecting offline without signing in." />
           )}
         </section>
+
+        {cloudEnabled && <TeamCard />}
+        <GoogleCard />
 
         <h2 className="mt-6 mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">Network simulator · demo</h2>
         <section className="card p-4">
@@ -157,7 +164,20 @@ export function Settings() {
         </section>
 
         <button
-          className="btn-ghost mt-6 w-full text-crit"
+          className="btn-ghost mt-6 w-full"
+          disabled={demoBusy}
+          onClick={async () => {
+            setDemoBusy(true);
+            const { addDemoInspections } = await import('../lib/seed');
+            await addDemoInspections();
+            setDemoBusy(false);
+            setDemoAdded(true);
+          }}
+        >
+          {demoBusy ? <Spinner /> : <Sparkles className="size-4" />} {demoAdded ? 'Demo inspections added ✓' : 'Add demo inspections (8 examples)'}
+        </button>
+        <button
+          className="btn-ghost mt-3 w-full text-crit"
           onClick={async () => {
             if (!window.confirm('Delete all local data and reload the demo?')) return;
             await Promise.all([db.delete(), serverDb.delete()]);

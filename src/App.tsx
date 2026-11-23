@@ -17,7 +17,12 @@ function PwaToast() {
     offlineReady: [offlineReady, setOfflineReady],
     needRefresh: [needRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    // Check for a new version every 30 minutes while the app stays open (e.g. a long inspection day)
+    onRegisteredSW(_url, reg) {
+      if (reg) setInterval(() => void reg.update(), 30 * 60_000);
+    },
+  });
 
   useEffect(() => {
     if (!offlineReady) return;

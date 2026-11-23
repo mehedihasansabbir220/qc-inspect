@@ -9,7 +9,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt',
+      // New versions activate automatically on the next load. Safe because every edit is
+      // already saved in IndexedDB — an update can never lose an inspection in progress.
+      registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'QC Inspect — Field Quality Inspection',

@@ -17,6 +17,8 @@ export interface SyncDeps {
   now?: () => number;
   /** Minimum gap between automatic pulls. */
   pullIntervalMs?: number;
+  /** Extra outbox jobs, e.g. 'export' → send the report to Google Workspace. */
+  handlers?: Partial<Record<'export', (refId: string) => Promise<void>>>;
 }
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
@@ -47,7 +49,7 @@ function sameAccess(a?: Access, b?: Access) {
  *     and everything shared with this user, plus their files for offline viewing.
  *  6. Local unsynced edits are never overwritten by a pull; revoked shares are removed.
  */
-export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIntervalMs = 15_000 }: SyncDeps) {
+export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIntervalMs = 15_000, handlers = {} }: SyncDeps) {
   let status: SyncStatus = { running: false };
   let lastPullRun = 0;
   const listeners = new Set<() => void>();
@@ -69,6 +71,10 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
   }
 
   async function process(item: OutboxItem) {
+    if (item.kind === 'export') {
+      await handlers.export?.(item.refId);
+      return;
+    }
     if (item.kind === 'photo') {
       const photo = await db.photos.get(item.refId);
       if (!photo) return; // deleted locally — nothing to do
@@ -105,7 +111,8 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
     });
   }
 
-  const order = (k: OutboxItem['kind']) => (k === 'inspection' ? 1 : 0);
+  // files → inspection record → exports (which need the finished record)
+  const order = (k: OutboxItem['kind']) => (k === 'inspection' ? 1 : k === 'export' ? 2 : 0);
 
   async function push(result: { pushed: number; failed: number }) {
     const due = await db.outbox.where('nextAttemptAt').belowOrEqual(now()).toArray();
@@ -169,7 +176,7 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
   }
 
   async function mergeRemote(r: RemoteInspection) {
-    const access: Access = r.isOwner ? OWNER_ACCESS : { role: 'shared', ownerEmail: r.ownerEmail, canDownload: r.canDownload, canEdit: r.canEdit };
+    const access: Access = r.isOwner ? OWNER_ACCESS : { role: r.via === 'team' ? 'team' : 'shared', ownerEmail: r.ownerEmail, canDownload: r.canDownload, canEdit: r.canEdit };
     const local = await db.inspections.get(r.id);
     if (local && (local.syncState === 'pending' || local.syncState === 'local')) {
       // Never clobber unsynced local work; just keep permissions fresh.
@@ -200,8 +207,8 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
       if (!r.isOwner) sharedIds.add(r.id);
       await mergeRemote(r);
     }
-    // Shares that disappeared from the server were revoked — remove local copies.
-    const localShared = await db.inspections.filter((i) => i.access?.role === 'shared').toArray();
+    // Shares / team access that disappeared from the server were revoked — remove local copies.
+    const localShared = await db.inspections.filter((i) => i.access?.role === 'shared' || i.access?.role === 'team').toArray();
     for (const i of localShared) if (!sharedIds.has(i.id)) await removeLocal(i.id);
     await db.settings.put({ key: 'lastPullAt', value: maxTs });
     setStatus({ lastPullAt: now() });

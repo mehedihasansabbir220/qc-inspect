@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Download } from 'lucide-react';
 import { Page, TopBar } from '../components/AppShell';
-import { DEFECTS, defectByCode } from '../lib/defects';
+import { defectName } from '../lib/defects';
 import { db, type Inspection } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { tally } from '../lib/verdict';
@@ -20,7 +20,7 @@ function toCsv(rows: Inspection[], factoryName: (id: string) => string) {
 }
 
 export function Insights() {
-  const { t, pick } = useI18n();
+  const { t, lang } = useI18n();
   const data = useLiveQuery(async () => ({
     inspections: await db.inspections.where('status').equals('completed').toArray(),
     factories: await db.factories.toArray(),
@@ -43,7 +43,11 @@ export function Insights() {
     .sort((a, b) => b.rate - a.rate);
 
   const defectCounts = new Map<string, number>();
-  for (const i of inspections) for (const d of i.defects) defectCounts.set(d.code, (defectCounts.get(d.code) ?? 0) + d.qty);
+  // Group by display name so inspectors' own "Other" defects are counted separately
+  for (const i of inspections) for (const d of i.defects) {
+    const key = defectName(d, lang);
+    defectCounts.set(key, (defectCounts.get(key) ?? 0) + d.qty);
+  }
   const topDefects = [...defectCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const maxDefect = topDefects[0]?.[1] ?? 1;
   const totalDefects = [...defectCounts.values()].reduce((a, b) => a + b, 0);
@@ -98,11 +102,10 @@ export function Insights() {
           <h3 className="font-semibold">Top defects</h3>
           <p className="text-xs text-ink-500">Where corrective action pays off first (Pareto).</p>
           <ul className="mt-3 space-y-2.5">
-            {topDefects.map(([code, n]) => {
-              const d = defectByCode.get(code) ?? DEFECTS[0];
+            {topDefects.map(([name, n]) => {
               return (
-                <li key={code} className="flex items-center gap-3 text-sm">
-                  <span className="w-36 shrink-0 truncate font-medium">{pick(d)}</span>
+                <li key={name} className="flex items-center gap-3 text-sm">
+                  <span className="w-36 shrink-0 truncate font-medium">{name}</span>
                   <div className="h-5 flex-1 overflow-hidden rounded-md bg-ink-100">
                     <div className="h-full rounded-md bg-ink-800" style={{ width: `${(n / maxDefect) * 100}%` }} />
                   </div>

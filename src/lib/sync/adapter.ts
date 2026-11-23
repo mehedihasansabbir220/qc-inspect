@@ -12,6 +12,8 @@ export interface RemoteInspection {
   canDownload: boolean;
   canEdit: boolean;
   updatedAt: string; // server timestamp (ISO)
+  /** Why I can see it: my own, shared with me by link, or team view (I'm a QA manager). */
+  via?: 'owner' | 'share' | 'team';
 }
 
 /**

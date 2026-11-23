@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type CellHookData } from 'jspdf-autotable';
-import { CHECKLIST, defectByCode } from './defects';
+import { defectName } from './defects';
+import { checklistOf } from './templates';
 import type { Inspection, Photo } from './db';
 import { DISCLAIMER, RESULT_LABEL, overallResult, reportNumber, reportSections, type SectionResult } from './report';
 import { tally } from './verdict';
@@ -219,7 +220,7 @@ export async function buildReportPdf(insp: Inspection, { factoryName, companyNam
     startY: y,
     head: [['Code', 'Defect description', 'Class', 'Qty', 'Remarks', 'Photo']],
     body: insp.defects.length
-      ? insp.defects.map((d) => [d.code, defectByCode.get(d.code)?.en ?? d.code, d.severity.toUpperCase(), d.qty, d.note ?? '', d.photoIds.map((p) => `#${photoIndex.get(p) ?? ''}`).join(' ')])
+      ? insp.defects.map((d) => [d.code, defectName(d), d.severity.toUpperCase(), d.qty, d.note ?? '', d.photoIds.map((p) => `#${photoIndex.get(p) ?? ''}`).join(' ')])
       : [['—', 'No defects found in the sample', '', '', '', '']],
     columnStyles: { 0: { cellWidth: 16, textColor: MUTED }, 2: { cellWidth: 19, fontStyle: 'bold' }, 3: { cellWidth: 10, halign: 'center' }, 5: { cellWidth: 26, minCellHeight: insp.defects.some((d) => d.photoIds.length) ? thumbH + 3 : 0, textColor: [255, 255, 255] } },
     didParseCell: (d) => {
@@ -243,14 +244,15 @@ export async function buildReportPdf(insp: Inspection, { factoryName, companyNam
   after();
 
   // ── 5. Measurements ───────────────────────────────────────────
-  heading('5', 'Measurement chart (cm)');
+  heading('5', 'Measurement chart');
   autoTable(doc, {
     ...base,
     startY: y,
     head: [['Point of measure', 'Spec', 'Tol ±', 'S1', 'S2', 'S3', 'S4', 'S5', 'Out']],
+    // unit is shown with the point of measure
     body: insp.measurements.map((m) => {
       const out = m.values.filter((v) => v != null && Math.abs(v - m.spec) > m.tol).length;
-      return [m.pom, m.spec, m.tol, ...m.values.map((v) => (v == null ? '—' : v)), out];
+      return [`${m.pom} (${m.unit ?? 'cm'})`, m.spec, m.tol, ...m.values.map((v) => (v == null ? '—' : v)), out];
     }),
     columnStyles: { 0: { cellWidth: 56 }, 1: { fontStyle: 'bold' }, 8: { fontStyle: 'bold', halign: 'center' } },
     didParseCell: (d) => {
@@ -276,7 +278,7 @@ export async function buildReportPdf(insp: Inspection, { factoryName, companyNam
     ...base,
     startY: y,
     head: [['Check', 'Result']],
-    body: CHECKLIST.map((ci) => {
+    body: checklistOf(insp).map((ci) => {
       const v = insp.checklist[ci.id];
       return [ci.en, v === 'ok' ? 'PASS' : v === 'nok' ? 'FAIL' : v === 'na' ? 'N/A' : 'PENDING'];
     }),
@@ -350,7 +352,7 @@ export async function buildReportPdf(insp: Inspection, { factoryName, companyNam
   // ── Photo appendix: 2 per row, numbered ───────────────────────
   if (photos.length) {
     const caption = new Map<string, string>();
-    for (const d of insp.defects) for (const p of d.photoIds) caption.set(p, `${d.code} · ${defectByCode.get(d.code)?.en ?? ''} (${d.severity})${d.note ? ` — ${d.note}` : ''}`);
+    for (const d of insp.defects) for (const p of d.photoIds) caption.set(p, `${d.code} · ${defectName(d)} (${d.severity})${d.note ? ` — ${d.note}` : ''}`);
     doc.addPage();
     y = 24;
     heading('A', `Photo appendix (${photos.length})`);

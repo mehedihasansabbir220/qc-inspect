@@ -47,6 +47,7 @@ export function createSupabaseAdapter(sb: SupabaseClient): SyncAdapter {
           canDownload: r.can_download as boolean,
           canEdit: r.can_edit as boolean,
           updatedAt: r.updated_at as string,
+          via: (r.via as RemoteInspection['via']) ?? undefined,
         }),
       );
     },

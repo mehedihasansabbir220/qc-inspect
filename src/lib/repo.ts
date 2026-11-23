@@ -1,11 +1,12 @@
 import { samplingPlan, type AqlValue, type InspectionLevel } from './aql';
-import { CHECKLIST, DEFAULT_POMS } from './defects';
+import { buildChecklist, templateById, DEFAULT_TEMPLATE } from './templates';
 import { OWNER_ACCESS, db, uid, type Access, type DefectEntry, type Inspection, type InspectionType } from './db';
 import { savePhoto } from './photos';
 import { syncEngine } from './sync';
 import { computeVerdict, tally } from './verdict';
 
 export interface NewInspectionInput {
+  templateId: string;
   buyer?: string;
   factoryId: string;
   poNumber: string;
@@ -23,6 +24,8 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
   const now = Date.now();
   const id = uid();
   const factory = await db.factories.get(input.factoryId);
+  const template = templateById.get(input.templateId) ?? DEFAULT_TEMPLATE;
+  const checklistItems = buildChecklist(template, input.buyer);
   await db.inspections.add({
     factoryName: factory?.name,
     factoryLocation: factory?.location,
@@ -38,8 +41,9 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
     plan: samplingPlan(input.lotSize, input.level, input.aqlMajor, input.aqlMinor),
     inspected: 0,
     defects: [],
-    measurements: DEFAULT_POMS.map((p) => ({ ...p, values: [null, null, null, null, null] })),
-    checklist: Object.fromEntries(CHECKLIST.map((c) => [c.id, undefined])),
+    checklistItems,
+    measurements: template.poms.map((p) => ({ ...p, values: [null, null, null, null, null] })),
+    checklist: Object.fromEntries(checklistItems.map((c) => [c.id, undefined])),
     comments: '',
     verdict: 'in-progress',
   });
@@ -69,6 +73,7 @@ export async function updateInspection(id: string, patch: Partial<Inspection> | 
 }
 
 export async function addDefect(id: string, entry: Omit<DefectEntry, 'id' | 'at' | 'photoIds'>, files: File[]) {
+  if (!entry.label) delete entry.label;
   const photos = [];
   for (const f of files) photos.push(await savePhoto(id, f));
   const defect: DefectEntry = { ...entry, id: uid(), at: Date.now(), photoIds: photos.map((p) => p.id) };
@@ -86,7 +91,16 @@ export async function removeDefect(id: string, defectId: string) {
 
 export async function completeInspection(id: string) {
   await updateInspection(id, { status: 'completed', completedAt: Date.now() });
+  const { getGoogleSettings, isConfigured } = await import('./google');
+  const g = await getGoogleSettings();
+  if (g.auto && isConfigured(g)) await syncEngine.enqueue('export', id);
   void syncEngine.runOnce();
+}
+
+/** "Send to Google Drive" button — queued, so it also works offline. */
+export async function queueGoogleExport(id: string) {
+  await syncEngine.enqueue('export', id);
+  void syncEngine.syncNow();
 }
 
 export async function deleteInspection(id: string) {

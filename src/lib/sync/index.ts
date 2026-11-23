@@ -11,7 +11,12 @@ const adapter = supabase ? createSupabaseAdapter(supabase) : mockServer;
 /** With a real backend we can only sync once signed in; offline work continues regardless. */
 const canSync = () => network.isOnline() && (!cloudEnabled || auth.getSession() !== null);
 
-export const syncEngine = createSyncEngine({ db, adapter, isOnline: canSync });
+export const syncEngine = createSyncEngine({
+  db,
+  adapter,
+  isOnline: canSync,
+  handlers: { export: async (id) => (await import('../google')).exportToGoogle(id) },
+});
 
 /**
  * Runs when a user signs in on this device.

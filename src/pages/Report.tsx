@@ -1,18 +1,19 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, CheckCircle2, Clock, CloudUpload, Download, Eye, FileText, Lock, Paperclip, Pencil, Send, Trash2, Upload, Users, XCircle } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, CheckCircle2, Clock, CloudUpload, Download, Eye, FileText, Lock, Paperclip, Pencil, Send, Trash2, Upload, Users, XCircle } from 'lucide-react';
 import { TopBar } from '../components/AppShell';
 import { PdfViewer } from '../components/PdfViewer';
 import { ShareDialog } from '../components/ShareDialog';
 import { RESULT_TONE, ResultPill, SEVERITY_STYLE, Spinner, SyncIcon, useObjectUrl } from '../components/ui';
-import { CHECKLIST, defectByCode } from '../lib/defects';
+import { defectName } from '../lib/defects';
+import { checklistOf } from '../lib/templates';
 import { db, type Photo } from '../lib/db';
 import { downloadBlob, reportFileName } from '../lib/files';
 import { useI18n } from '../lib/i18n';
 import { formatBytes } from '../lib/photos';
 import { DISCLAIMER, RESULT_LABEL, overallOf, reportNumber, reportSections } from '../lib/report';
-import { accessOf, addAttachment, removeAttachment, updateInspection } from '../lib/repo';
+import { accessOf, addAttachment, queueGoogleExport, removeAttachment, updateInspection } from '../lib/repo';
 import { tally } from '../lib/verdict';
 
 function Thumb({ photo, className = 'size-12' }: { photo?: Photo; className?: string }) {
@@ -126,7 +127,15 @@ export function Report() {
           <div className="flex items-center gap-3 rounded-2xl bg-sky-50 p-3 text-sm text-sky-900 ring-1 ring-sky-200">
             <Users className="size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              Shared with you by <b>{access.ownerEmail ?? 'a colleague'}</b>
+              {access.role === 'team' ? (
+                <>
+                  Team view — inspected by <b>{access.ownerEmail ?? 'a colleague'}</b>
+                </>
+              ) : (
+                <>
+                  Shared with you by <b>{access.ownerEmail ?? 'a colleague'}</b>
+                </>
+              )}
               <div className="text-xs text-sky-700">
                 You can: view{access.canDownload ? ' · download' : ''}
                 {access.canEdit ? ' · edit' : ''}
@@ -203,14 +212,13 @@ export function Report() {
           ) : (
             <ul className="divide-y divide-ink-100">
               {insp.defects.map((d) => {
-                const def = defectByCode.get(d.code);
                 const st = SEVERITY_STYLE[d.severity];
                 return (
                   <li key={d.id} className="flex items-center gap-3 px-4 py-2.5">
                     {d.photoIds.length ? <Thumb photo={photoById.get(d.photoIds[0])} /> : <div className={`h-12 w-1 shrink-0 rounded-full ${st.bar}`} />}
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold">
-                        {def ? pick(def) : d.code}
+                        {defectName(d, lang)}
                         {d.qty > 1 && <span className="text-ink-500"> ×{d.qty}</span>}
                       </div>
                       <div className="truncate text-xs text-ink-500">
@@ -227,13 +235,13 @@ export function Report() {
         </Card>
 
         {/* 4. Measurements */}
-        <Card n="4" title="Measurement chart (cm)">
+        <Card n="4" title="Measurement chart">
           <div className="space-y-2 p-4 text-sm">
             {insp.measurements.map((m) => (
               <div key={m.pom} className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate">{m.pom}</span>
                 <span className="text-xs text-ink-400 tabular-nums">
-                  {m.spec}±{m.tol}
+                  {m.spec}±{m.tol} {m.unit ?? 'cm'}
                 </span>
                 <div className="flex gap-1">
                   {m.values.map((v, i) => {
@@ -253,7 +261,7 @@ export function Report() {
         {/* 5. Checklist */}
         <Card n="5" title={t('checklist')}>
           <ul className="divide-y divide-ink-100">
-            {CHECKLIST.map((ci) => {
+            {checklistOf(insp).map((ci) => {
               const v = insp.checklist[ci.id];
               return (
                 <li key={ci.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
@@ -367,6 +375,27 @@ export function Report() {
               ))}
             </div>
           </Card>
+        )}
+
+        {isOwner && insp.status === 'completed' && (
+          <div className="flex items-center gap-3 rounded-2xl bg-white p-3 ring-1 ring-ink-200">
+            <FileSpreadsheet className="size-5 shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="font-semibold">Google Drive & Sheets</div>
+              <div className="truncate text-xs text-ink-500">
+                {insp.driveUrl ? (
+                  <a className="text-brand-600 underline" href={insp.driveUrl} target="_blank" rel="noreferrer">
+                    Saved {insp.exportedAt ? dateFmt.format(insp.exportedAt) : ''} — open PDF in Drive
+                  </a>
+                ) : (
+                  'Not sent yet (Settings → Google Workspace)'
+                )}
+              </div>
+            </div>
+            <button className="btn-ghost !px-3 !py-2 text-sm" onClick={() => void queueGoogleExport(insp.id)}>
+              {insp.driveUrl ? 'Send again' : 'Send'}
+            </button>
+          </div>
         )}
 
         {access.canEdit && insp.status === 'completed' && (

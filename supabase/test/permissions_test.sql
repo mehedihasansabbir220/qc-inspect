@@ -5,11 +5,13 @@ insert into auth.users values
   ('00000000-0000-0000-0000-00000000000a', 'owner@ft.com'),
   ('00000000-0000-0000-0000-00000000000b', 'viewer@brand.com'),
   ('00000000-0000-0000-0000-00000000000c', 'editor@ft.com'),
-  ('00000000-0000-0000-0000-00000000000d', 'stranger@x.com');
+  ('00000000-0000-0000-0000-00000000000d', 'stranger@x.com'),
+  ('00000000-0000-0000-0000-00000000000e', 'manager@ft.com');
+update public.profiles set role = 'manager' where email = 'manager@ft.com';
 
 create or replace function public.t_as(who text) returns void language plpgsql as $$
 begin
-  perform set_config('request.jwt.claim.sub', case who when 'owner' then '00000000-0000-0000-0000-00000000000a' when 'viewer' then '00000000-0000-0000-0000-00000000000b' when 'editor' then '00000000-0000-0000-0000-00000000000c' else '00000000-0000-0000-0000-00000000000d' end, false);
+  perform set_config('request.jwt.claim.sub', case who when 'owner' then '00000000-0000-0000-0000-00000000000a' when 'viewer' then '00000000-0000-0000-0000-00000000000b' when 'editor' then '00000000-0000-0000-0000-00000000000c' when 'manager' then '00000000-0000-0000-0000-00000000000e' else '00000000-0000-0000-0000-00000000000d' end, false);
   perform set_config('request.jwt.claim.email', who || '@test', false);
 end $$;
 
@@ -98,4 +100,23 @@ select t_check('viewer unaffected by other revocation', (select count(*) from in
 select t_check('viewer cannot delete', t_affected('delete from inspections') = 0);
 select t_as('stranger');
 select t_check('stranger cannot delete files', t_affected('delete from storage.objects') = 0);
+-- Roles
+select t_check('signup trigger created a profile per user', (select count(*) from profiles) >= 1);
+select t_check('inspector sees only own profile', (select count(*) from profiles) = 1);
+select t_check('inspector role defaults to inspector', my_role() = 'inspector');
+select t_err('inspector cannot list team', $$select * from list_team()$$, '42501');
+select t_err('inspector cannot promote anyone', $$select set_user_role('00000000-0000-0000-0000-00000000000d', 'manager')$$, '42501');
+select t_check('inspector cannot self-promote via table', t_affected('update profiles set role = ''manager''') = 0);
+
+select t_as('manager');
+select t_check('manager sees all inspections (team view)', (select count(*) from inspections) = 1);
+select t_check('manager pull: via=team, download yes, edit no', (select via = 'team' and can_download and not can_edit from pull_inspections('1970-01-01')));
+select t_check('manager can read photos', (select count(*) from storage.objects) >= 1);
+select t_err('manager cannot edit someone else''s inspection', $$select upsert_inspection('{"id":"11111111-1111-1111-1111-111111111111","version":7}'::jsonb)$$, '42501');
+select t_check('manager cannot see others'' share links', (select count(*) from shares) = 0);
+select t_check('manager lists the whole team', (select count(*) from list_team()) = 5);
+select t_err('manager cannot change own role', $$select set_user_role('00000000-0000-0000-0000-00000000000e', 'inspector')$$, '42501');
+select set_user_role('00000000-0000-0000-0000-00000000000d', 'manager');
+select t_as('stranger');
+select t_check('promoted user now has team view', (select count(*) from inspections) = 1);
 reset role;

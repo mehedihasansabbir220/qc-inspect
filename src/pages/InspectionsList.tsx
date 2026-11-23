@@ -13,7 +13,7 @@ import { tally } from '../lib/verdict';
 import { overallOf } from '../lib/report';
 import { ArrowRight, PlayCircle } from 'lucide-react';
 
-type Filter = 'all' | 'draft' | 'completed' | 'shared';
+type Filter = 'all' | 'draft' | 'completed' | 'shared' | 'team';
 
 export function InspectionsList() {
   const { t, lang } = useI18n();
@@ -32,7 +32,8 @@ export function InspectionsList() {
   const drafts = inspections.filter((i) => i.status === 'draft').length;
   const lastDraft = inspections.find((i) => i.status === 'draft' && i.access?.role !== 'shared');
   const sharedCount = inspections.filter((i) => i.access?.role === 'shared').length;
-  const shown = inspections.filter((i) => (filter === 'all' ? true : filter === 'shared' ? i.access?.role === 'shared' : i.status === filter));
+  const teamCount = inspections.filter((i) => i.access?.role === 'team').length;
+  const shown = inspections.filter((i) => (filter === 'all' ? true : filter === 'shared' || filter === 'team' ? i.access?.role === filter : i.status === filter));
 
   return (
     <>
@@ -87,8 +88,8 @@ export function InspectionsList() {
 
         <div className="mt-6 mb-3 flex items-center justify-between">
           <h1 className="text-lg font-bold">{t('inspections')}</h1>
-          <div className="seg text-xs">
-            {(['all', 'draft', 'completed', ...(sharedCount ? ['shared'] : [])] as Filter[]).map((f) => (
+          <div className="seg max-w-[68%] overflow-x-auto text-xs whitespace-nowrap">
+            {(['all', 'draft', 'completed', ...(sharedCount ? ['shared'] : []), ...(teamCount ? ['team'] : [])] as Filter[]).map((f) => (
               <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)} className="!px-3 !py-1.5 capitalize">
                 {f === 'draft' ? t('draft') : f}
               </button>
@@ -129,7 +130,7 @@ function InspectionRow({ insp, factoryName, lang }: { insp: Inspection; factoryN
   const { t } = useI18n();
   const c = tally(insp.defects);
   const photos = insp.defects.reduce((n, d) => n + d.photoIds.length, 0);
-  const shared = insp.access?.role === 'shared';
+  const shared = insp.access?.role === 'shared' || insp.access?.role === 'team';
   const href = insp.status === 'draft' && !shared ? `/inspect/${insp.id}` : `/report/${insp.id}`;
   const progress = Math.min(100, (insp.inspected / insp.plan.sampleSize) * 100);
   return (

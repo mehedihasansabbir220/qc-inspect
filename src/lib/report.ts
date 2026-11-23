@@ -1,4 +1,6 @@
 import type { Inspection } from './db';
+import type { CheckSection } from './defects';
+import { checklistOf } from './templates';
 import { tally } from './verdict';
 
 /**
@@ -11,7 +13,7 @@ import { tally } from './verdict';
 export type SectionResult = 'pass' | 'fail' | 'pending' | 'na';
 
 export interface ReportSection {
-  key: 'quantity' | 'conformity' | 'workmanship' | 'measurement' | 'packing' | 'safety';
+  key: 'quantity' | 'conformity' | 'workmanship' | 'measurement' | 'packing' | 'safety' | 'tests' | 'buyer';
   title: string;
   result: SectionResult;
   remark: string;
@@ -20,7 +22,11 @@ export interface ReportSection {
 /** A small share of readings outside tolerance is commonly referred to the buyer rather than failed outright. */
 export const MEASUREMENT_FAIL_RATE = 0.1;
 
-function fromChecks(values: (string | undefined)[]): SectionResult {
+type Answer = 'ok' | 'nok' | 'na' | undefined;
+
+/** Result of a group of checklist answers. No items in the group → N/A. */
+function fromChecks(values: Answer[]): SectionResult {
+  if (values.length === 0) return 'na';
   if (values.some((v) => v === 'nok')) return 'fail';
   if (values.some((v) => v === undefined)) return 'pending';
   if (values.every((v) => v === 'na')) return 'na';
@@ -30,6 +36,16 @@ function fromChecks(values: (string | undefined)[]): SectionResult {
 export function reportSections(insp: Inspection): ReportSection[] {
   const c = tally(insp.defects);
   const { plan, checklist: ck } = insp;
+  const items = checklistOf(insp);
+  const group = (sec: CheckSection) => items.filter((i) => i.section === sec);
+  const answers = (sec: CheckSection) => group(sec).map((i) => ck[i.id] as Answer);
+  const remarkFor = (sec: CheckSection, fallback: string) => {
+    const nok = group(sec).filter((i) => ck[i.id] === 'nok');
+    if (nok.length) return `Not OK: ${nok.map((i) => i.en).join('; ')}`;
+    const open = group(sec).filter((i) => !ck[i.id]).length;
+    if (open) return `${open} item(s) not checked yet`;
+    return fallback;
+  };
 
   const readings = insp.measurements.flatMap((m) => m.values.map((v) => ({ v, m })));
   const taken = readings.filter((r) => r.v != null);
@@ -37,21 +53,12 @@ export function reportSections(insp: Inspection): ReportSection[] {
   const measurement: SectionResult = taken.length === 0 ? 'pending' : out === 0 ? 'pass' : out / taken.length > MEASUREMENT_FAIL_RATE ? 'fail' : 'pending';
 
   const workmanship: SectionResult = insp.verdict === 'in-progress' ? 'pending' : insp.verdict;
-  const safety: SectionResult = c.critical > 0 ? 'fail' : fromChecks([ck['metal']]);
+  const safetyChecks = answers('safety');
+  const safety: SectionResult = c.critical > 0 ? 'fail' : safetyChecks.length ? fromChecks(safetyChecks) : 'pass';
 
-  return [
-    {
-      key: 'quantity',
-      title: 'Quantity',
-      result: fromChecks([ck['qty']]),
-      remark: ck['qty'] === 'nok' ? 'Packed quantity does not match the PO' : `${insp.lotSize.toLocaleString('en')} pcs presented`,
-    },
-    {
-      key: 'conformity',
-      title: 'Product conformity',
-      result: fromChecks([ck['approved-sample']]),
-      remark: ck['approved-sample'] === 'nok' ? 'Deviates from approved sample (colour / hand-feel)' : 'Checked against approved sample',
-    },
+  const sections: ReportSection[] = [
+    { key: 'quantity', title: 'Quantity', result: fromChecks(answers('quantity')), remark: remarkFor('quantity', `${insp.lotSize.toLocaleString('en')} pcs presented`) },
+    { key: 'conformity', title: 'Product conformity', result: fromChecks(answers('conformity')), remark: remarkFor('conformity', 'Checked against approved sample') },
     {
       key: 'workmanship',
       title: 'Workmanship (AQL)',
@@ -64,19 +71,17 @@ export function reportSections(insp: Inspection): ReportSection[] {
       result: measurement,
       remark: taken.length === 0 ? 'Not measured' : out === 0 ? `${taken.length} readings within tolerance` : `${out} of ${taken.length} readings out of tolerance`,
     },
-    {
-      key: 'packing',
-      title: 'Packing, marking & labels',
-      result: fromChecks([ck['carton'], ck['labels'], ck['drop-test']]),
-      remark: [ck['carton'] === 'nok' && 'carton marking', ck['labels'] === 'nok' && 'labels', ck['drop-test'] === 'nok' && 'drop test'].filter(Boolean).join(', ') || 'Carton marking, labels, drop test',
-    },
+    { key: 'packing', title: 'Packing, marking & labels', result: fromChecks(answers('packing')), remark: remarkFor('packing', group('packing').map((i) => i.en.split(' ')[0]).join(', ') || '—') },
     {
       key: 'safety',
       title: 'Safety',
       result: safety,
-      remark: c.critical > 0 ? `${c.critical} critical defect(s) found` : 'Metal detection log, sharp points',
+      remark: c.critical > 0 ? `${c.critical} critical defect(s) found` : remarkFor('safety', safetyChecks.length ? 'Safety checks passed' : 'No critical defects found'),
     },
   ];
+  if (group('tests').length) sections.push({ key: 'tests', title: 'Product-specific tests', result: fromChecks(answers('tests')), remark: remarkFor('tests', group('tests').map((i) => i.en).join('; ')) });
+  if (group('buyer').length) sections.push({ key: 'buyer', title: `Buyer requirements${insp.buyer ? ` (${insp.buyer})` : ''}`, result: fromChecks(answers('buyer')), remark: remarkFor('buyer', group('buyer').map((i) => i.en).join('; ')) });
+  return sections;
 }
 
 export type OverallResult = 'pass' | 'fail' | 'pending';

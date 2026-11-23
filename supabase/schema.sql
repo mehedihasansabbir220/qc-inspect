@@ -45,7 +45,35 @@ create table if not exists public.share_members (
   primary key (share_id, user_id)
 );
 
+-- Roles: 'inspector' (default) or 'manager' (QA manager: sees & downloads everyone's reports, assigns roles).
+-- One Supabase project = one company, so "team" means every user of this project.
+create table if not exists public.profiles (
+  id         uuid primary key references auth.users(id) on delete cascade,
+  email      text,
+  role       text not null default 'inspector' check (role in ('inspector', 'manager')),
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, email) values (new.id, new.email) on conflict (id) do nothing;
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Backfill users who signed up before roles existed
+insert into public.profiles (id, email) select id, email from auth.users on conflict (id) do nothing;
+
 -- ───────────────────────── permission helpers ─────────────────────────
+create or replace function public.is_manager() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from profiles where id = auth.uid() and role = 'manager');
+$$;
+
 -- SECURITY DEFINER so policies can call them without recursive RLS evaluation.
 create or replace function public.is_owner(iid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -67,7 +95,7 @@ $$;
 
 create or replace function public.can_view(iid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select is_owner(iid) or (select can_view from share_flags(iid));
+  select is_owner(iid) or is_manager() or (select can_view from share_flags(iid));
 $$;
 
 create or replace function public.can_edit(iid uuid) returns boolean
@@ -77,13 +105,18 @@ $$;
 
 create or replace function public.can_download(iid uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select is_owner(iid) or (select can_download from share_flags(iid));
+  select is_owner(iid) or is_manager() or (select can_download from share_flags(iid));
 $$;
 
 -- ───────────────────────── RLS ─────────────────────────
 alter table public.inspections   enable row level security;
 alter table public.shares        enable row level security;
 alter table public.share_members enable row level security;
+alter table public.profiles      enable row level security;
+
+drop policy if exists profiles_read on public.profiles;
+create policy profiles_read on public.profiles for select using (id = auth.uid() or public.is_manager());
+-- No insert/update/delete policies: profiles are created by the trigger and roles change only via set_user_role().
 
 drop policy if exists insp_select on public.inspections;
 create policy insp_select on public.inspections for select using (public.can_view(id));
@@ -132,16 +165,49 @@ begin
   return v;
 end $$;
 
--- Own inspections changed since a timestamp, plus ALL inspections shared with me (always, so
--- permission changes and revocations are picked up on every pull). RLS filters visibility.
+-- Own inspections changed since a timestamp, plus ALL inspections others gave me access to
+-- (always, so permission changes and revocations are picked up on every pull). RLS filters
+-- visibility. `via` says why I can see it: owner | share (a link) | team (I'm a manager).
+drop function if exists public.pull_inspections(timestamptz);
 create or replace function public.pull_inspections(since timestamptz)
-returns table (id uuid, version integer, data jsonb, owner_email text, is_owner boolean, can_download boolean, can_edit boolean, updated_at timestamptz)
+returns table (id uuid, version integer, data jsonb, owner_email text, is_owner boolean, can_download boolean, can_edit boolean, updated_at timestamptz, via text)
 language sql stable security invoker set search_path = public as $$
   select i.id, i.version, i.data, i.owner_email, i.owner_id = auth.uid(),
-         public.can_download(i.id), public.can_edit(i.id), i.updated_at
+         public.can_download(i.id), public.can_edit(i.id), i.updated_at,
+         case when i.owner_id = auth.uid() then 'owner'
+              when (select sf.can_view from public.share_flags(i.id) sf) then 'share'
+              else 'team' end
   from inspections i
   where i.updated_at > since or i.owner_id <> auth.uid()
   order by i.updated_at;
+$$;
+
+-- Managers: who is on the team, with activity.
+create or replace function public.list_team()
+returns table (id uuid, email text, role text, inspections bigint, last_activity timestamptz)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_manager() then raise exception 'Managers only' using errcode = '42501'; end if;
+  return query
+    select p.id, p.email, p.role, count(i.id), max(i.updated_at)
+    from profiles p left join inspections i on i.owner_id = p.id
+    group by p.id, p.email, p.role
+    order by p.role desc, p.email;
+end $$;
+
+-- Managers assign roles. You cannot change your own role (prevents locking the team out).
+create or replace function public.set_user_role(target uuid, new_role text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_manager() then raise exception 'Only a QA manager can change roles' using errcode = '42501'; end if;
+  if target = auth.uid() then raise exception 'You cannot change your own role' using errcode = '42501'; end if;
+  if new_role not in ('inspector', 'manager') then raise exception 'Unknown role %', new_role using errcode = '22023'; end if;
+  update profiles set role = new_role where id = target;
+end $$;
+
+create or replace function public.my_role() returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce((select role from profiles where id = auth.uid()), 'inspector');
 $$;
 
 -- Opening a link: join the share (must be signed in). Returns the inspection id.
@@ -185,4 +251,8 @@ drop policy if exists qc_files_delete on storage.objects;
 create policy qc_files_delete on storage.objects for delete
   using (bucket_id = 'qc-files' and public.is_owner(((storage.foldername(name))[1])::uuid));
 
-grant execute on function public.upsert_inspection(jsonb), public.pull_inspections(timestamptz), public.redeem_share(text) to authenticated;
+grant execute on function public.upsert_inspection(jsonb), public.pull_inspections(timestamptz), public.redeem_share(text),
+  public.list_team(), public.set_user_role(uuid, text), public.my_role() to authenticated;
+
+-- First QA manager: run once in the SQL editor with your own e-mail —
+--   update public.profiles set role = 'manager' where email = 'you@company.com';

@@ -8,7 +8,7 @@ import { SEVERITY_STYLE, Spinner, useObjectUrl } from './ui';
 interface Props {
   defect: DefectType;
   onClose: () => void;
-  onSave: (v: { severity: Severity; qty: number; note: string; files: File[] }) => Promise<void>;
+  onSave: (v: { severity: Severity; qty: number; note: string; files: File[]; label?: string }) => Promise<void>;
 }
 
 function Preview({ file, onRemove }: { file: File; onRemove: () => void }) {
@@ -29,6 +29,8 @@ export function DefectSheet({ defect, onClose, onSave }: Props) {
   const [severity, setSeverity] = useState<Severity>(defect.severity);
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState('');
+  const [label, setLabel] = useState('');
+  const isOther = defect.code === 'OTH-01';
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -42,7 +44,7 @@ export function DefectSheet({ defect, onClose, onSave }: Props) {
   async function save() {
     setSaving(true);
     try {
-      await onSave({ severity, qty, note: note.trim(), files });
+      await onSave({ severity, qty, note: note.trim(), files, label: isOther ? label.trim() : undefined });
       onClose();
     } finally {
       setSaving(false);
@@ -64,6 +66,13 @@ export function DefectSheet({ defect, onClose, onSave }: Props) {
             <X className="size-5" />
           </button>
         </div>
+
+        {isOther && (
+          <div className="mt-4">
+            <label className="label" htmlFor="other-name">Describe the defect</label>
+            <input id="other-name" className="field" autoFocus placeholder="e.g. Glue mark on label" value={label} onChange={(e) => setLabel(e.target.value)} />
+          </div>
+        )}
 
         <div className="mt-5">
           <span className="label">{t('severity')}</span>
@@ -135,7 +144,7 @@ export function DefectSheet({ defect, onClose, onSave }: Props) {
           <textarea className="field min-h-20 resize-none" placeholder={t('note')} value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
 
-        <button type="button" onClick={save} disabled={saving} className="btn-primary mt-4 mb-3 w-full text-base">
+        <button type="button" onClick={save} disabled={saving || (isOther && !label.trim())} className="btn-primary mt-4 mb-3 w-full text-base">
           {saving ? <Spinner /> : <Plus className="size-5" />} {t('logDefect')}
           {qty > 1 && ` ×${qty}`}
         </button>

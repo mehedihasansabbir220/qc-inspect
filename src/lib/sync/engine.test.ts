@@ -172,4 +172,31 @@ describe('sync engine', () => {
     expect(sent).not.toHaveProperty('access');
     expect(sent).not.toHaveProperty('syncState');
   });
+
+  it('runs Google export jobs after files and the inspection record', async () => {
+    const order: string[] = [];
+    adapter.pushPhoto = vi.fn(async () => (order.push('photo'), { url: 'x' }));
+    adapter.pushInspection.mockImplementation(async (i) => (order.push('inspection'), { serverVersion: i.version }));
+    const e = createSyncEngine({ db, adapter, isOnline: () => online, now: () => clock, handlers: { export: async () => void order.push('export') } });
+    await db.inspections.add(makeInspection('a'));
+    await db.photos.add({ id: 'p1', inspectionId: 'a', blob: new Blob(['x']), width: 1, height: 1, originalBytes: 1, bytes: 1, createdAt: 0, uploaded: false });
+    await e.enqueue('export', 'a');
+    clock += 1;
+    await e.enqueue('inspection', 'a');
+    clock += 1;
+    await e.enqueue('photo', 'p1');
+    await e.runOnce();
+    expect(order).toEqual(['photo', 'inspection', 'export']);
+  });
+
+  it('retries a failed Google export with backoff', async () => {
+    const exportFn = vi.fn().mockRejectedValueOnce(new Error('Google 503')).mockResolvedValueOnce(undefined);
+    const e = createSyncEngine({ db, adapter, isOnline: () => online, now: () => clock, handlers: { export: exportFn } });
+    await e.enqueue('export', 'a');
+    await e.runOnce();
+    expect((await db.outbox.toArray())[0].lastError).toBe('Google 503');
+    clock += 60_000;
+    await e.runOnce();
+    expect(await db.outbox.count()).toBe(0);
+  });
 });
