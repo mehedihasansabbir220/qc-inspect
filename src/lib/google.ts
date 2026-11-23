@@ -18,7 +18,23 @@ export interface GoogleSettings {
 const KEY = 'google';
 export const getGoogleSettings = () => getSetting<GoogleSettings>(KEY, { url: '', token: '', auto: true });
 export const saveGoogleSettings = (s: GoogleSettings) => setSetting(KEY, s);
-export const isConfigured = (s: GoogleSettings) => /^https:\/\/script\.google(usercontent)?\.com\//.test(s.url) || /^http:\/\/(localhost|127\.0\.0\.1)/.test(s.url);
+/**
+ * Explain a wrong URL in plain words. The most common mistake is pasting the Google Sheet's own
+ * link instead of the Apps Script *web-app* link (…/macros/s/…/exec).
+ */
+export function diagnoseUrl(url: string): string | undefined {
+  const u = url.trim();
+  if (!u) return undefined;
+  if (/docs\.google\.com\/spreadsheets/.test(u))
+    return 'This is the link to your Google Sheet, not to the script. Open the Sheet → Extensions → Apps Script → paste Code.gs → Deploy → New deployment → Web app → copy the “Web app URL” (it ends in /exec).';
+  if (/drive\.google\.com|docs\.google\.com/.test(u)) return 'This is a Drive / Docs link. You need the Apps Script “Web app URL” (script.google.com/macros/s/…/exec).';
+  if (/script\.google\.com\/(home|d\/)/.test(u)) return 'This is the script editor link. In the editor: Deploy → New deployment → Web app → copy the “Web app URL” (ends in /exec).';
+  if (/script\.google\.com\/macros\/s\/.+\/dev$/.test(u)) return 'This is a test (/dev) link that only works for you. Use Deploy → New deployment and copy the URL that ends in /exec.';
+  if (/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1)/.test(u)) return undefined;
+  return 'Expected a Google Apps Script web-app URL like https://script.google.com/macros/s/…/exec';
+}
+
+export const isConfigured = (s: GoogleSettings) => !!s.url && !diagnoseUrl(s.url);
 
 function toBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

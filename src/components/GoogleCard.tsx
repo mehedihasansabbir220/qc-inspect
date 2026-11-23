@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, PlugZap, XCircle } from 'lucide-react';
-import { getGoogleSettings, isConfigured, saveGoogleSettings, testGoogleConnection, type GoogleSettings } from '../lib/google';
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, PlugZap, XCircle } from 'lucide-react';
+import { diagnoseUrl, getGoogleSettings, isConfigured, saveGoogleSettings, testGoogleConnection, type GoogleSettings } from '../lib/google';
 import { Spinner } from './ui';
 
 /** Settings: connect the company's Google Drive / Sheets through its Apps Script bridge. */
@@ -37,6 +37,11 @@ export function GoogleCard() {
         <div>
           <label className="label" htmlFor="g-url">Web-app URL</label>
           <input id="g-url" className="field text-sm" placeholder="https://script.google.com/macros/s/…/exec" value={s.url} onChange={(e) => setS({ ...s, url: e.target.value.trim() })} onBlur={() => save(s)} />
+          {diagnoseUrl(s.url) && (
+            <p className="mt-2 flex gap-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900 ring-1 ring-amber-200" role="alert">
+              <AlertTriangle className="size-4 shrink-0" /> {diagnoseUrl(s.url)}
+            </p>
+          )}
         </div>
         <div>
           <label className="label" htmlFor="g-token">Token (same as in the script)</label>
@@ -46,8 +51,8 @@ export function GoogleCard() {
           <input type="checkbox" className="size-5 accent-emerald-600" checked={s.auto} onChange={(e) => save({ ...s, auto: e.target.checked })} />
           Send every completed report automatically
         </label>
-        <div className="flex items-center gap-3">
-          <button className="btn-ghost !py-2 text-sm" onClick={() => void test()} disabled={!isConfigured(s) || state.kind === 'testing'}>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-ghost !py-2 text-sm" onClick={() => void test()} disabled={!isConfigured(s) || !s.token || state.kind === 'testing'}>
             {state.kind === 'testing' ? <Spinner /> : <PlugZap className="size-4" />} Test connection
           </button>
           {state.kind === 'ok' && (

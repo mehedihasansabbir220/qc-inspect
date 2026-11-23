@@ -7,7 +7,8 @@
  *   • adds or updates one row per report in the Google Sheet "QC Inspections" (same folder)
  *
  * Setup (5 minutes) — see README.md in this folder:
- *   1. script.google.com → New project → paste this file.
+ *   1. Open your Google Sheet → Extensions → Apps Script (rows go into THAT sheet),
+ *      or script.google.com → New project (a sheet "QC Inspections" is created for you) → paste this file.
  *   2. Project Settings → Script properties → add  TOKEN = <a long random secret>.
  *   3. Deploy → New deployment → Web app · Execute as: Me · Who has access: Anyone.
  *   4. In the app: Settings → Google Workspace → paste the web-app URL and the same TOKEN.
@@ -59,9 +60,12 @@ function folder_(parent, name) {
 }
 
 function sheet_(root) {
+  // Created from inside a Google Sheet (Extensions → Apps Script)? Then write into that Sheet.
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
   const files = root.getFilesByName(SPREADSHEET);
-  let ss;
-  if (files.hasNext()) {
+  if (ss) {
+    // use the bound spreadsheet
+  } else if (files.hasNext()) {
     ss = SpreadsheetApp.open(files.next());
   } else {
     ss = SpreadsheetApp.create(SPREADSHEET);
@@ -69,8 +73,14 @@ function sheet_(root) {
   }
   let sh = ss.getSheetByName(SHEET);
   if (!sh) {
-    sh = ss.getSheets()[0];
-    sh.setName(SHEET);
+    // Reuse an empty first tab; never touch a tab that already holds your own data
+    const first = ss.getSheets()[0];
+    if (first.getLastRow() === 0) {
+      sh = first;
+      sh.setName(SHEET);
+    } else {
+      sh = ss.insertSheet(SHEET);
+    }
   }
   if (sh.getLastRow() === 0) {
     sh.appendRow(HEADERS);

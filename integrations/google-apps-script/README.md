@@ -12,8 +12,16 @@ only accepts requests that carry your secret token. Exports wait in the app's of
 
 ## Steps (done once, by the Google account that should own the files)
 
-1. Open **https://script.google.com** → **New project** → name it `QC Inspect bridge`.
-2. Delete the sample code, paste **`Code.gs`** from this folder, and **Save**.
+> ⚠️ The app needs the **script's web-app URL** (`https://script.google.com/macros/s/…/exec`),
+> **not** the link of your Google Sheet (`docs.google.com/spreadsheets/…`). A Sheet link can't receive
+> data. The app warns you if you paste one.
+
+1. **Recommended: start from your own Sheet.** Open the Google Sheet you want the rows in →
+   **Extensions → Apps Script**. Rows then go into *that* Sheet (tab "Inspections").
+   *Or* open **https://script.google.com** → **New project**; a Sheet "QC Inspections" is then created
+   in the Drive folder for you.
+2. Delete the sample code, paste **`Code.gs`** from this folder, name the project `QC Inspect bridge`,
+   and **Save** (💾).
 3. ⚙ **Project Settings** → **Script properties** → **Add property**:
    `TOKEN` = a long random secret (e.g. generate one at a password manager). Save.
 4. **Deploy → New deployment** → type **Web app**:
