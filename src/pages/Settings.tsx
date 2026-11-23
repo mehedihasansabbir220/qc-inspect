@@ -61,7 +61,14 @@ export function Settings() {
                 <div className="truncate text-sm font-semibold">{session.user.email}</div>
                 <div className="text-xs text-ink-500">Signed in · syncing to cloud</div>
               </div>
-              <button className="btn-ghost !px-3 !py-2 text-sm" onClick={() => void signOut()}>
+              <button
+                className="btn-ghost !px-3 !py-2 text-sm"
+                onClick={() => {
+                  const n = outbox?.length ?? 0;
+                  if (n && !window.confirm(`${n} item(s) are not uploaded yet. If a different user signs in on this device they will be lost. Sign out anyway?`)) return;
+                  void signOut();
+                }}
+              >
                 <LogOut className="size-4" /> Sign out
               </button>
             </div>
