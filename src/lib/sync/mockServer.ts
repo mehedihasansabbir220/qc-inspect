@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Inspection, Photo } from '../db';
+import type { Inspection } from '../db';
 import { ConflictError, NetworkError, type SyncAdapter } from './adapter';
 import { network } from './network';
 

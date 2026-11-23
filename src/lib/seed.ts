@@ -19,7 +19,13 @@ function rng(seed: number) {
   return () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 }
 
-export async function seedIfEmpty() {
+let seeding: Promise<void> | undefined;
+/** Idempotent; safe under React StrictMode double-invocation. */
+export function seedIfEmpty() {
+  return (seeding ??= seed());
+}
+
+async function seed() {
   if ((await db.factories.count()) > 0) return;
   await db.factories.bulkAdd(DEMO_FACTORIES);
 
@@ -45,6 +51,9 @@ export async function seedIfEmpty() {
       const d = DEFECTS[3 + Math.floor(rand() * (DEFECTS.length - 3))]; // skip critical
       defects.push({ id: uid(), code: d.code, severity: d.severity, qty: 1, photoIds: [], at: now - daysAgo * day });
     }
+    // Realistic mix: a shade-variation lot rejected on majors, and a metal-contamination critical
+    if (idx === 1) for (let k = 0; k < 6; k++) defects.push({ id: uid(), code: 'FAB-03', severity: 'major', qty: 1, photoIds: [], at: now - daysAgo * day, note: k === 0 ? 'Cartons 14–18, lot B dye batch' : undefined });
+    if (idx === 5) defects.push({ id: uid(), code: 'SAF-01', severity: 'critical', qty: 1, photoIds: [], at: now - daysAgo * day, note: 'Needle fragment in waistband' });
     const t = now - daysAgo * day - idx * 3_600_000;
     const insp: Inspection = {
       id: uid(),
