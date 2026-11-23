@@ -10,6 +10,7 @@ import { Inspect } from './pages/Inspect';
 import { Report } from './pages/Report';
 import { Insights } from './pages/Insights';
 import { Settings } from './pages/Settings';
+import { SharedLink } from './pages/SharedLink';
 
 function PwaToast() {
   const {
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="/report/:id" element={<Report />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/s/:token" element={<SharedLink />} />
         <Route path="*" element={<InspectionsList />} />
       </Routes>
       <PwaToast />

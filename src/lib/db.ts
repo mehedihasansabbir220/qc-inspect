@@ -50,6 +50,38 @@ export interface Inspection {
   inspector: string;
   verdict: Verdict;
   completedAt?: number;
+  /** Snapshot so the name still shows on devices that don't have this factory in master data. */
+  factoryName?: string;
+  attachments?: AttachmentMeta[];
+  /** Local-only: who owns this record and what this user may do with it. Never pushed. */
+  access?: Access;
+}
+
+export interface Access {
+  role: 'owner' | 'shared';
+  ownerEmail?: string;
+  canDownload: boolean;
+  canEdit: boolean;
+}
+
+export const OWNER_ACCESS: Access = { role: 'owner', canDownload: true, canEdit: true };
+
+export interface AttachmentMeta {
+  id: string;
+  name: string;
+  bytes: number;
+  addedAt: number;
+}
+
+/** An uploaded document (e.g. a third-party inspection report PDF). */
+export interface Attachment {
+  id: string;
+  inspectionId: string;
+  name: string;
+  blob: Blob;
+  bytes: number;
+  createdAt: number;
+  uploaded: boolean;
 }
 
 export interface Photo {
@@ -66,7 +98,7 @@ export interface Photo {
 
 export interface OutboxItem {
   id?: number;
-  kind: 'inspection' | 'photo';
+  kind: 'inspection' | 'photo' | 'attachment';
   refId: string;
   attempts: number;
   nextAttemptAt: number;
@@ -90,6 +122,7 @@ export interface Setting {
 export class QcDatabase extends Dexie {
   inspections!: EntityTable<Inspection, 'id'>;
   photos!: EntityTable<Photo, 'id'>;
+  attachments!: EntityTable<Attachment, 'id'>;
   outbox!: EntityTable<OutboxItem, 'id'>;
   factories!: EntityTable<Factory, 'id'>;
   settings!: EntityTable<Setting, 'key'>;
@@ -104,10 +137,18 @@ export class QcDatabase extends Dexie {
       factories: 'id',
       settings: 'key',
     });
+    this.version(2).stores({
+      attachments: 'id, inspectionId, uploaded',
+    });
   }
 }
 
 export const db = new QcDatabase();
+
+export const filePath = {
+  photo: (inspectionId: string, id: string) => `${inspectionId}/photos/${id}.jpg`,
+  attachment: (inspectionId: string, id: string) => `${inspectionId}/attachments/${id}.pdf`,
+};
 
 export function uid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();

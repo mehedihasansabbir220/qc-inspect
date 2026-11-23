@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { samplingPlan } from '../aql';
 import { QcDatabase, uid, type Inspection } from '../db';
-import type { SyncAdapter } from './adapter';
+import { PermissionError, type RemoteInspection, type SyncAdapter } from './adapter';
 import { createSyncEngine } from './engine';
 
 function makeInspection(id: string): Inspection {
@@ -99,5 +99,77 @@ describe('sync engine', () => {
     await e.enqueue('photo', 'p1');
     await e.runOnce();
     expect(order).toEqual(['photo', 'inspection']);
+  });
+
+  describe('pull (two-way sync & sharing)', () => {
+    const remote = (id: string, version: number, extra: Partial<RemoteInspection> = {}): RemoteInspection => {
+      const { syncState: _s, ...data } = makeInspection(id);
+      void _s;
+      return { id, version, data: { ...data, version, comments: `v${version}` }, isOwner: false, ownerEmail: 'owner@x.com', canDownload: false, canEdit: false, updatedAt: new Date(clock).toISOString(), ...extra };
+    };
+
+    it('brings in a report shared with me, with its permissions', async () => {
+      adapter.pullInspections = vi.fn(async () => [remote('s1', 3, { canDownload: true })]);
+      await engine().syncNow();
+      const got = await db.inspections.get('s1');
+      expect(got?.access).toEqual({ role: 'shared', ownerEmail: 'owner@x.com', canDownload: true, canEdit: false });
+      expect(got?.syncState).toBe('synced');
+    });
+
+    it('takes a newer server version (edited by a colleague)', async () => {
+      await db.inspections.add({ ...makeInspection('a'), syncState: 'synced', version: 2 });
+      adapter.pullInspections = vi.fn(async () => [remote('a', 4, { isOwner: true })]);
+      await engine().syncNow();
+      expect((await db.inspections.get('a'))?.comments).toBe('v4');
+    });
+
+    it('never overwrites unsynced local edits', async () => {
+      await db.inspections.add({ ...makeInspection('a'), syncState: 'local', version: 2, comments: 'mine' });
+      adapter.pullInspections = vi.fn(async () => [remote('a', 9, { canEdit: true })]);
+      await engine().syncNow();
+      const got = await db.inspections.get('a');
+      expect(got?.comments).toBe('mine');
+      expect(got?.access?.canEdit).toBe(true); // permissions still refreshed
+    });
+
+    it('removes a shared report when access is revoked', async () => {
+      adapter.pullInspections = vi.fn(async () => [remote('s1', 1)]);
+      const e = engine();
+      await e.syncNow();
+      expect(await db.inspections.get('s1')).toBeDefined();
+      adapter.pullInspections = vi.fn(async () => []);
+      await e.syncNow();
+      expect(await db.inspections.get('s1')).toBeUndefined();
+    });
+
+    it('downloads shared photos for offline viewing', async () => {
+      const r = remote('s1', 1);
+      r.data.defects = [{ id: 'd1', code: 'FAB-02', severity: 'major', qty: 1, photoIds: ['p9'], at: 0 }];
+      adapter.pullInspections = vi.fn(async () => [r]);
+      adapter.downloadFile = vi.fn(async () => new Blob(['jpg']));
+      await engine().syncNow();
+      expect(adapter.downloadFile).toHaveBeenCalledWith('s1/photos/p9.jpg');
+      expect((await db.photos.get('p9'))?.uploaded).toBe(true);
+    });
+  });
+
+  it('does not retry forever when edit permission was revoked', async () => {
+    const e = engine();
+    adapter.pushInspection.mockRejectedValueOnce(new PermissionError('no edit'));
+    await db.inspections.add(makeInspection('a'));
+    await e.enqueue('inspection', 'a');
+    await e.runOnce();
+    expect(await db.outbox.count()).toBe(0);
+    expect((await db.inspections.get('a'))?.syncState).toBe('error');
+  });
+
+  it('never sends device-local fields to the server', async () => {
+    const e = engine();
+    await db.inspections.add({ ...makeInspection('a'), access: { role: 'owner', canDownload: true, canEdit: true } });
+    await e.enqueue('inspection', 'a');
+    await e.runOnce();
+    const sent = adapter.pushInspection.mock.calls[0][0];
+    expect(sent).not.toHaveProperty('access');
+    expect(sent).not.toHaveProperty('syncState');
   });
 });

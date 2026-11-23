@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Camera, ChevronRight, CloudOff, Factory as FactoryIcon, ShieldCheck } from 'lucide-react';
+import { Camera, ChevronRight, CloudOff, Factory as FactoryIcon, Paperclip, ShieldCheck, Users } from 'lucide-react';
+import { cloudEnabled, useSession } from '../lib/supabase';
 import { Page, TopBar } from '../components/AppShell';
 import { usePendingCount } from '../components/SyncPill';
 import { SyncIcon, VerdictBadge, relativeTime } from '../components/ui';
@@ -10,13 +11,14 @@ import { useI18n } from '../lib/i18n';
 import { useNetwork } from '../lib/sync';
 import { tally } from '../lib/verdict';
 
-type Filter = 'all' | 'draft' | 'completed';
+type Filter = 'all' | 'draft' | 'completed' | 'shared';
 
 export function InspectionsList() {
   const { t, lang } = useI18n();
   const [filter, setFilter] = useState<Filter>('all');
   const { online } = useNetwork();
   const pending = usePendingCount();
+  const session = useSession();
   const inspections = useLiveQuery(() => db.inspections.orderBy('updatedAt').reverse().toArray(), []);
   const factories = useLiveQuery(async () => new Map((await db.factories.toArray()).map((f) => [f.id, f])), []);
 
@@ -26,7 +28,8 @@ export function InspectionsList() {
   const completedWeek = inspections.filter((i) => i.status === 'completed' && (i.completedAt ?? 0) > weekAgo);
   const passRate = completedWeek.length ? Math.round((completedWeek.filter((i) => i.verdict === 'pass').length / completedWeek.length) * 100) : 0;
   const drafts = inspections.filter((i) => i.status === 'draft').length;
-  const shown = inspections.filter((i) => filter === 'all' || i.status === filter);
+  const sharedCount = inspections.filter((i) => i.access?.role === 'shared').length;
+  const shown = inspections.filter((i) => (filter === 'all' ? true : filter === 'shared' ? i.access?.role === 'shared' : i.status === filter));
 
   return (
     <>
@@ -42,6 +45,16 @@ export function InspectionsList() {
           </div>
         )}
 
+        {cloudEnabled && !session && (
+          <Link to="/settings" className="mb-4 flex items-center gap-3 rounded-2xl bg-brand-50 p-4 text-sm text-emerald-900 ring-1 ring-emerald-200">
+            <ShieldCheck className="size-5 shrink-0 text-brand-600" />
+            <span className="flex-1">
+              <b>Sign in to sync & send reports.</b> Your work stays safe on this device until then.
+            </span>
+            <ChevronRight className="size-4" />
+          </Link>
+        )}
+
         <section className="grid grid-cols-3 gap-3">
           <Kpi label="Pass rate · 7d" value={`${passRate}%`} tone={passRate >= 80 ? 'text-brand-600' : 'text-major'} />
           <Kpi label="Inspections · 7d" value={completedWeek.length} />
@@ -51,7 +64,7 @@ export function InspectionsList() {
         <div className="mt-6 mb-3 flex items-center justify-between">
           <h1 className="text-lg font-bold">{t('inspections')}</h1>
           <div className="seg text-xs">
-            {(['all', 'draft', 'completed'] as Filter[]).map((f) => (
+            {(['all', 'draft', 'completed', ...(sharedCount ? ['shared'] : [])] as Filter[]).map((f) => (
               <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)} className="!px-3 !py-1.5 capitalize">
                 {f === 'draft' ? t('draft') : f}
               </button>
@@ -70,7 +83,7 @@ export function InspectionsList() {
         ) : (
           <ul className="space-y-3">
             {shown.map((i) => (
-              <InspectionRow key={i.id} insp={i} factoryName={factories.get(i.factoryId)?.name ?? '—'} lang={lang} />
+              <InspectionRow key={i.id} insp={i} factoryName={i.factoryName ?? factories.get(i.factoryId)?.name ?? '—'} lang={lang} />
             ))}
           </ul>
         )}
@@ -92,7 +105,8 @@ function InspectionRow({ insp, factoryName, lang }: { insp: Inspection; factoryN
   const { t } = useI18n();
   const c = tally(insp.defects);
   const photos = insp.defects.reduce((n, d) => n + d.photoIds.length, 0);
-  const href = insp.status === 'draft' ? `/inspect/${insp.id}` : `/report/${insp.id}`;
+  const shared = insp.access?.role === 'shared';
+  const href = insp.status === 'draft' && !shared ? `/inspect/${insp.id}` : `/report/${insp.id}`;
   const progress = Math.min(100, (insp.inspected / insp.plan.sampleSize) * 100);
   return (
     <li>
@@ -121,6 +135,16 @@ function InspectionRow({ insp, factoryName, lang }: { insp: Inspection; factoryN
           <span className="tabular-nums">
             <b className="text-crit">{c.critical}</b> / <b className="text-major">{c.major}</b> / <b className="text-minor">{c.minor}</b>
           </span>
+          {shared && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700" title={`Shared by ${insp.access?.ownerEmail}`}>
+              <Users className="size-3" /> {insp.access?.ownerEmail?.split('@')[0] ?? 'shared'}
+            </span>
+          )}
+          {!!insp.attachments?.length && (
+            <span className="inline-flex items-center gap-1">
+              <Paperclip className="size-3.5" /> {insp.attachments.length}
+            </span>
+          )}
           {photos > 0 && (
             <span className="inline-flex items-center gap-1">
               <Camera className="size-3.5" /> {photos}

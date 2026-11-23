@@ -1,6 +1,6 @@
 import { samplingPlan, type AqlValue, type InspectionLevel } from './aql';
 import { CHECKLIST, DEFAULT_POMS } from './defects';
-import { db, uid, type DefectEntry, type Inspection, type InspectionType } from './db';
+import { OWNER_ACCESS, db, uid, type Access, type DefectEntry, type Inspection, type InspectionType } from './db';
 import { savePhoto } from './photos';
 import { syncEngine } from './sync';
 import { computeVerdict, tally } from './verdict';
@@ -21,7 +21,11 @@ export interface NewInspectionInput {
 export async function createInspection(input: NewInspectionInput): Promise<string> {
   const now = Date.now();
   const id = uid();
+  const factory = await db.factories.get(input.factoryId);
   await db.inspections.add({
+    factoryName: factory?.name,
+    attachments: [],
+    access: OWNER_ACCESS,
     id,
     createdAt: now,
     updatedAt: now,
@@ -84,11 +88,36 @@ export async function completeInspection(id: string) {
 }
 
 export async function deleteInspection(id: string) {
-  await db.transaction('rw', [db.inspections, db.photos, db.outbox], async () => {
+  await db.transaction('rw', [db.inspections, db.photos, db.outbox, db.attachments], async () => {
     const photoIds = await db.photos.where('inspectionId').equals(id).primaryKeys();
     await db.photos.bulkDelete(photoIds);
     const refs = new Set<string>([id, ...photoIds]);
     await db.outbox.filter((o) => refs.has(o.refId)).delete();
+    await db.attachments.where('inspectionId').equals(id).delete();
     await db.inspections.delete(id);
   });
+}
+
+export const accessOf = (i: Pick<Inspection, 'access'>): Access => i.access ?? OWNER_ACCESS;
+
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/** Attach an existing report (PDF). Stored on-device first, uploaded via the outbox. */
+export async function addAttachment(inspectionId: string, file: File) {
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) throw new Error('Only PDF files are supported');
+  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error('PDF is larger than 20 MB');
+  const id = uid();
+  const now = Date.now();
+  await db.attachments.add({ id, inspectionId, name: file.name, blob: file, bytes: file.size, createdAt: now, uploaded: false });
+  await updateInspection(inspectionId, (i) => ({ attachments: [...(i.attachments ?? []), { id, name: file.name, bytes: file.size, addedAt: now }] }));
+  await syncEngine.enqueue('attachment', id);
+  // Drafts don't sync on edit; make sure the record carrying the attachment list is queued too.
+  const insp = await db.inspections.get(inspectionId);
+  if (insp?.status === 'draft') await syncEngine.enqueue('inspection', inspectionId);
+  void syncEngine.runOnce();
+}
+
+export async function removeAttachment(inspectionId: string, attachmentId: string) {
+  await db.attachments.delete(attachmentId);
+  await updateInspection(inspectionId, (i) => ({ attachments: (i.attachments ?? []).filter((a) => a.id !== attachmentId) }));
 }

@@ -30,6 +30,17 @@ automatically and safely when a signal returns.
   defects, **CSV export** for Google Sheets / Excel.
 - **English / বাংলা** — UI and defect names switch language, so line QC can use it in their own language.
 - **Network simulator** — force *Offline* or *Flaky 3G* (40% of requests dropped) to demo sync behaviour.
+- **Generated PDF report** — built on the device with jsPDF (works offline): verdict, sampling plan,
+  colour-coded defect / measurement / checklist tables, photo pages. **Preview** in-app (pdf.js,
+  works on Android/iOS where browsers can't show PDFs inline) and **Download**.
+- **Attach existing reports** — upload any PDF (third-party inspection, lab test) to an inspection;
+  stored offline first, synced through the same outbox, previewed in-app.
+- **Send with permissions** — create a link for the report (+ attachments), share via WhatsApp,
+  e-mail, copy or the native share sheet. Each link carries **View** (always), **Download** and
+  **Edit** switches the owner can change or **revoke** at any time, and shows who opened it.
+  Enforced by Postgres Row Level Security — not just hidden buttons.
+- **Two-way sync** — edits by a colleague with edit permission flow back to the owner's device;
+  local unsynced work is never overwritten; revoked reports disappear from the recipient's device.
 
 ## Architecture
 
@@ -78,6 +89,55 @@ export const supabaseAdapter: SyncAdapter = {
 };
 ```
 
+## Sharing & permissions (Supabase)
+
+```mermaid
+sequenceDiagram
+  participant O as Owner (inspector)
+  participant DB as Supabase (Postgres + RLS + Storage)
+  participant R as Recipient
+  O->>DB: insert shares (can_download, can_edit) → token
+  O-->>R: link /s/<token> via WhatsApp / e-mail
+  R->>DB: sign in, rpc redeem_share(token) → becomes member
+  R->>DB: rpc pull_inspections → report + effective permissions
+  R->>DB: storage download (RLS: can_view)
+  R->>DB: rpc upsert_inspection (RLS: can_edit, version check)
+  DB-->>O: next pull brings the edit back
+```
+
+| Action | Owner | Link: view | + download | + edit | Revoked / stranger |
+|---|---|---|---|---|---|
+| Open report & preview PDFs | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Download generated PDF & attachments | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Edit inspection, upload attachments | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Create / change / revoke links | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Delete | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+- **Recipients sign in.** QC reports are confidential brand data, so links are not public: a leaked
+  link is useless without an account, and the owner sees exactly who opened it.
+- **Enforced server-side** in `supabase/schema.sql`: RLS policies on `inspections`, `shares`,
+  `share_members` and `storage.objects` all go through `can_view / can_edit / can_download`.
+  Edits go through `upsert_inspection`, which also enforces optimistic concurrency (`40001` on a
+  stale version → the app keeps the server copy and flags the conflict).
+- **Honest limit:** "no download" removes the download path (UI + file save), but anyone who can
+  *view* a document can still screenshot it — the same model as Google Drive's "disable download".
+- **Verified:** `npm run test:db` runs 30 permission scenarios (owner, view-only, editor, revoked
+  editor, stranger) against real Postgres. It caught a real hole during development: a storage
+  policy that used a plain sub-query let strangers upload into another user's folder because RLS
+  hid the row — fixed with a `SECURITY DEFINER` existence check.
+
+### Supabase setup (≈10 minutes, free tier)
+
+1. Create a project at [supabase.com](https://supabase.com) (region: Singapore is closest to Dhaka).
+2. **SQL Editor** → paste `supabase/schema.sql` → **Run**.
+3. **Authentication → Providers → Email**: for a quick demo, turn **off** "Confirm email".
+4. **Authentication → URL Configuration**: add your deployed URL and `http://localhost:5173`.
+5. **Project Settings → API**: copy *Project URL* and *anon public* key into `.env.local`
+   (see `.env.example`), then restart `npm run dev`. On Vercel, add the same two variables.
+
+Without these variables the app runs in **demo mode** against the on-device mock server — everything
+works except accounts and sending.
+
 **Storage durability.** The app requests `navigator.storage.persist()` so the browser won’t evict
 inspection data under storage pressure.
 
@@ -92,7 +152,8 @@ vite-plugin-pwa · Vitest + fake-indexeddb · lucide icons. No runtime network d
 ```bash
 npm install
 npm run dev        # http://localhost:5173 (also exposed on your LAN)
-npm test           # 30 unit tests: AQL tables, verdict, backoff, sync engine
+npm test           # 37 unit tests: AQL tables, verdict, backoff, sync engine (push + pull + permissions)
+npm run test:db -- "host=127.0.0.1 port=5432 user=postgres"   # 30 RLS permission tests on local Postgres
 npm run build && npm run preview   # production build with service worker
 ```
 
@@ -105,6 +166,20 @@ Push to GitHub, then import the repo on **Vercel** or **Netlify** (framework: Vi
 `npm run build`, output `dist`). SPA rewrites are already configured (`vercel.json`,
 `public/_redirects`). Open the URL on an Android phone → “Install app”.
 
+## How to verify it works
+
+1. `npm test` → 37 passed. `npm run build` → builds with a service worker.
+2. **Offline:** `npm run preview`, open DevTools → Network → *Offline*, reload — the app still
+   opens. Complete an inspection → pill shows *1 pending*. Go back online → *All synced*.
+3. **Flaky network:** Settings → *Flaky 3G* → watch retries with backoff in the outbox list.
+4. **PDF:** open a report → *Preview PDF* (2+ page report) → *Download*. Upload a PDF under
+   *Attached reports* → tap it to preview.
+5. **Sharing (needs Supabase):** sign in as user A on the phone, *Send* a report with only *View*.
+   Open the link in an incognito window, sign up as user B → report opens, **no download / edit**.
+   On A, switch on *Edit* for that link → B (after sync) sees *Edit inspection*; B changes a comment
+   → A sees it after the next sync. A taps 🗑 *Revoke* → the report disappears from B.
+6. **Permissions on the server:** `npm run test:db` → 30 passed.
+
 ## Project layout
 
 ```
@@ -116,20 +191,26 @@ src/
     db.ts             Dexie schema & types
     repo.ts           domain operations (create, autosave, add defect, complete)
     photos.ts         on-device compression
-    sync/             outbox engine, backoff, adapter interface, mock server, network simulator
-  pages/              Inspections, NewInspection, Inspect, Report, Insights, Settings
-  components/         AppShell, SyncPill, DefectSheet, UI primitives
+    sync/             outbox engine (push + pull), backoff, adapter interface, Supabase adapter, mock server, network simulator
+    pdf.ts            on-device PDF report generation (lazy-loaded)
+    share.ts          share links: create, update, revoke, redeem
+    supabase.ts       client + session store (works offline)
+  pages/              Inspections, NewInspection, Inspect, Report, Insights, Settings, SharedLink
+  components/         AppShell, SyncPill, DefectSheet, PdfViewer, ShareDialog, AuthForm, UI primitives
+supabase/
+  schema.sql          tables, RLS policies, RPCs, storage bucket & policies
+  test/               Postgres permission test-suite (stubs Supabase auth/storage)
 ```
 
 ## Roadmap to production
 
-1. **Backend + auth** — Supabase (Postgres + Storage + RLS per factory/role) or Firebase; inspector
-   login with offline session caching.
+1. **Roles & organisations** — factory / brand / QA-manager roles on top of per-report sharing;
+   link expiry; audit log of who changed what.
 2. **Master data sync** — pull POs, styles, factories, spec sheets and AQL presets per customer
    from the existing ERP / Google Sheets.
 3. **Background Sync API** + periodic sync on Android so uploads finish with the app closed.
 4. **Photo annotation** (circle the defect), barcode / QR scan of carton labels.
-5. **Supervisor review & sign-off**, automatic e-mail of the PDF report to the brand.
+5. **Supervisor review & sign-off**, automatic e-mail of the PDF report to the brand (Edge Function).
 6. **Conflict UI** for the rare case a supervisor and inspector edit the same record.
 7. **Field pilot** with 2–3 inspectors, measure time-per-inspection vs. paper, iterate.
 8. If needed, wrap with Capacitor for Play Store distribution and native camera access.

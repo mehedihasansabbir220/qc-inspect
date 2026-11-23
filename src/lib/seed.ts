@@ -65,6 +65,9 @@ async function seed() {
       status: 'completed',
       syncState: 'synced',
       factoryId,
+      factoryName: DEMO_FACTORIES.find((f) => f.id === factoryId)?.name,
+      attachments: [],
+      access: { role: 'owner', canDownload: true, canEdit: true },
       poNumber: `PO-${24810 + idx * 37}`,
       style: `${product.split(' ')[0].slice(0, 3).toUpperCase()}-${1040 + idx}`,
       productCategory: product,
@@ -88,7 +91,7 @@ async function seed() {
 
   await db.inspections.bulkAdd(inspections);
   await serverDb.inspections.bulkPut(
-    inspections.map(({ syncState: _s, ...data }) => (void _s, { id: data.id, version: data.version, receivedAt: data.syncedAt!, data })),
+    inspections.map(({ syncState: _s, access: _a, ...data }) => (void _s, void _a, { id: data.id, version: data.version, receivedAt: data.syncedAt!, data })),
   );
 }
 

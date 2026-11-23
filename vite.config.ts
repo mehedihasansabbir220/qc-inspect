@@ -28,7 +28,9 @@ export default defineConfig({
       },
       workbox: {
         // App shell is precached so the app boots with zero connectivity.
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
+        // pdf.js worker is ~1.4 MB; precache it so PDF preview works offline
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: '/index.html',
       },
     }),

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Database, HardDrive, RefreshCw, RotateCcw, Wifi, WifiOff, Zap } from 'lucide-react';
+import { Cloud, Database, HardDrive, LogOut, RefreshCw, RotateCcw, Wifi, WifiOff, Zap } from 'lucide-react';
+import { AuthForm } from '../components/AuthForm';
+import { cloudEnabled, signOut, useSession } from '../lib/supabase';
 import { Page, TopBar } from '../components/AppShell';
 import { Segmented, Spinner, relativeTime } from '../components/ui';
 import { db, getSetting, setSetting } from '../lib/db';
@@ -18,6 +20,7 @@ export function Settings() {
   const [storage, setStorage] = useState<{ usage?: number; quota?: number; persisted?: boolean }>({});
   const outbox = useLiveQuery(() => db.outbox.orderBy('nextAttemptAt').toArray(), []);
   const serverCount = useLiveQuery(() => serverDb.inspections.count(), []);
+  const session = useSession();
 
   useEffect(() => {
     getSetting('inspector', '').then(setInspector);
@@ -41,6 +44,30 @@ export function Settings() {
             <span className="label">{t('language')}</span>
             <Segmented value={lang} onChange={setLang} options={[{ value: 'en', label: 'English' }, { value: 'bn', label: 'বাংলা' }]} />
           </div>
+        </section>
+
+        <h2 className="mt-6 mb-2 flex items-center gap-1.5 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">
+          <Cloud className="size-3.5" /> Cloud account
+        </h2>
+        <section className="card p-4">
+          {!cloudEnabled ? (
+            <p className="text-sm text-ink-600">
+              Demo mode — syncing to an on-device mock server. Add Supabase keys to enable accounts, real sync and sending reports (README → Supabase setup).
+            </p>
+          ) : session ? (
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-full bg-brand-50 font-bold text-brand-600 uppercase">{session.user.email?.[0]}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{session.user.email}</div>
+                <div className="text-xs text-ink-500">Signed in · syncing to cloud</div>
+              </div>
+              <button className="btn-ghost !px-3 !py-2 text-sm" onClick={() => void signOut()}>
+                <LogOut className="size-4" /> Sign out
+              </button>
+            </div>
+          ) : (
+            <AuthForm intro="Sign in to back up inspections to the cloud and send reports. You can keep inspecting offline without signing in." />
+          )}
         </section>
 
         <h2 className="mt-6 mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">Network simulator · demo</h2>
@@ -111,8 +138,8 @@ export function Settings() {
           </div>
           <div className="flex items-center gap-3 p-4">
             <Database className="size-5 text-ink-400" />
-            <span className="flex-1">Inspections on (mock) server</span>
-            <span className="font-semibold tabular-nums">{serverCount ?? '—'}</span>
+            <span className="flex-1">{cloudEnabled ? 'Backend' : 'Inspections on (mock) server'}</span>
+            <span className="font-semibold tabular-nums">{cloudEnabled ? 'Supabase' : (serverCount ?? '—')}</span>
           </div>
         </section>
 
@@ -121,6 +148,7 @@ export function Settings() {
           onClick={async () => {
             if (!window.confirm('Delete all local data and reload the demo?')) return;
             await Promise.all([db.delete(), serverDb.delete()]);
+            await signOut();
             location.href = '/';
           }}
         >
