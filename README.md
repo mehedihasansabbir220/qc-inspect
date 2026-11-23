@@ -84,7 +84,7 @@ shell is precached by a Workbox service worker, so it boots with zero connectivi
 1. Writes that must reach the server create a durable outbox row (survives restarts).
 2. The engine drains it on `online` events, app focus, a 10 s timer, or a manual “Sync now”.
 3. **Photos upload before the inspection** that references them.
-4. Failures retry with **exponential backoff + full jitter** (capped at 5 min) so a fleet of devices
+4. Failures retry with **exponential backoff + jitter** (capped at 5 min) so a fleet of devices
    regaining signal after a power cut doesn’t stampede the API.
 5. **Idempotent** pushes keyed by client UUIDs → a retried request that already succeeded never duplicates.
 6. **Optimistic concurrency**: every edit bumps `version`; a record is only marked synced if it
