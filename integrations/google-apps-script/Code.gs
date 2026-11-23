@@ -14,6 +14,11 @@
  *   4. In the app: Settings → Google Workspace → paste the web-app URL and the same TOKEN.
  */
 
+// Filled in automatically when you use "Copy setup script" in the app (Settings → Google Workspace).
+// Leave empty to use Script properties (TOKEN) and a Sheet created for you.
+const TOKEN = '';
+const SHEET_ID = '';
+
 const ROOT_FOLDER = 'QC Inspect Reports';
 const SPREADSHEET = 'QC Inspections';
 const SHEET = 'Inspections';
@@ -23,7 +28,7 @@ const HEADERS = ['Report no', 'Inspection date', 'Buyer', 'Factory', 'PO', 'Styl
 function doPost(e) {
   try {
     const p = JSON.parse(e.postData.contents);
-    const token = PropertiesService.getScriptProperties().getProperty('TOKEN');
+    const token = TOKEN || PropertiesService.getScriptProperties().getProperty('TOKEN');
     if (!token || p.token !== token) return json_({ ok: false, error: 'Invalid token' });
 
     const root = folder_(DriveApp.getRootFolder(), ROOT_FOLDER);
@@ -60,8 +65,8 @@ function folder_(parent, name) {
 }
 
 function sheet_(root) {
-  // Created from inside a Google Sheet (Extensions → Apps Script)? Then write into that Sheet.
-  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  // Your own Sheet (from the app's setup), or the Sheet this script was created from (Extensions → Apps Script).
+  let ss = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   const files = root.getFilesByName(SPREADSHEET);
   if (ss) {
     // use the bound spreadsheet

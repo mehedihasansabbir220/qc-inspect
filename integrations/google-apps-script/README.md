@@ -10,28 +10,30 @@ The app holds no Google keys. A small **Apps Script** runs inside your own Googl
 only accepts requests that carry your secret token. Exports wait in the app's offline queue
 (and retry with backoff) until there is internet.
 
-## Steps (done once, by the Google account that should own the files)
+## Easiest way: the guided setup in the app (about 3 minutes, on a laptop)
 
-> ⚠️ The app needs the **script's web-app URL** (`https://script.google.com/macros/s/…/exec`),
-> **not** the link of your Google Sheet (`docs.google.com/spreadsheets/…`). A Sheet link can't receive
-> data. The app warns you if you paste one.
+Open **Settings → Google Drive & Sheets** and follow the 5 numbered steps:
 
-1. **Recommended: start from your own Sheet.** Open the Google Sheet you want the rows in →
-   **Extensions → Apps Script**. Rows then go into *that* Sheet (tab "Inspections").
-   *Or* open **https://script.google.com** → **New project**; a Sheet "QC Inspections" is then created
-   in the Drive folder for you.
-2. Delete the sample code, paste **`Code.gs`** from this folder, name the project `QC Inspect bridge`,
-   and **Save** (💾).
-3. ⚙ **Project Settings** → **Script properties** → **Add property**:
-   `TOKEN` = a long random secret (e.g. generate one at a password manager). Save.
-4. **Deploy → New deployment** → type **Web app**:
-   - *Execute as:* **Me**
-   - *Who has access:* **Anyone** (the token protects it)
-   → **Deploy** → allow the permissions (Drive + Sheets) → copy the **Web app URL** (ends in `/exec`).
-5. In QC Inspect: **Settings → Google Workspace** → paste the URL and the same TOKEN →
-   **Test connection** → "Connected to your Google script".
-6. Complete an inspection (or open a report → **Google Drive & Sheets → Send**) → the PDF appears
-   in Drive and a row in the Sheet within seconds.
+1. **Your Google Sheet (optional):** paste your Sheet's normal link. Leave it empty to get a new Sheet.
+2. **Copy setup script:** the app copies this script with **your Sheet and a secret token already
+   inside**. There's nothing to configure in Google. (If the browser blocks copying, the script appears
+   in a box to copy by hand.)
+3. **Open Google Apps Script** (opens script.new) → select all → paste → 💾 Save.
+4. **Deploy → New deployment → ⚙ Web app → Who has access: Anyone → Deploy → Authorize**.
+   If Google says "hasn't verified this app": *Advanced → Go to (project name) → Allow*.
+   Copy the **Web app URL** (ends in `/exec`).
+5. **Paste the Web app URL** in the app. It tests the connection by itself.
+
+> Pasting the Sheet link in step 5 is the most common mistake. The app tells you if you do.
+
+## Alternative for step 3: create the script from inside your Sheet
+
+Instead of script.new you can open your Sheet → **Extensions → Apps Script** (menu bar: File · Edit
+· View · Insert · Format · Data · Tools · **Extensions** · Help; not available in the Sheets phone
+app). Paste the script you copied in step 2 there. Everything else stays the same.
+
+> Always paste the script **copied from the app**, not the plain `Code.gs` file. The app's copy
+> contains your secret token, and the app only trusts a script with that token.
 
 **Updating the script later:** Deploy → *Manage deployments* → ✏ → Version: *New version* → Deploy
 (the URL stays the same).

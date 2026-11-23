@@ -2,6 +2,8 @@ import { db, getSetting, setSetting, type Photo } from './db';
 import { reportFileName } from './files';
 import { RESULT_LABEL, overallOf, reportNumber } from './report';
 import { tally } from './verdict';
+// The Apps Script source, bundled so the app can hand it over ready-to-paste.
+import scriptSource from '../../integrations/google-apps-script/Code.gs?raw';
 
 /**
  * Google Workspace integration via a small Apps Script web app the company deploys in its own
@@ -10,6 +12,8 @@ import { tally } from './verdict';
  */
 export interface GoogleSettings {
   url: string;
+  /** Optional: the user's own Google Sheet link — rows go there. */
+  sheetUrl?: string;
   token: string;
   /** Send every completed report automatically (queued offline like everything else). */
   auto: boolean;
@@ -25,13 +29,30 @@ export const saveGoogleSettings = (s: GoogleSettings) => setSetting(KEY, s);
 export function diagnoseUrl(url: string): string | undefined {
   const u = url.trim();
   if (!u) return undefined;
-  if (/docs\.google\.com\/spreadsheets/.test(u))
-    return 'This is the link to your Google Sheet, not to the script. Open the Sheet → Extensions → Apps Script → paste Code.gs → Deploy → New deployment → Web app → copy the “Web app URL” (it ends in /exec).';
+  if (/docs\.google\.com\/spreadsheets/.test(u)) return 'That’s your Sheet link. Put it in step 1. This box needs the Web app URL from step 4 (it ends in /exec).';
   if (/drive\.google\.com|docs\.google\.com/.test(u)) return 'This is a Drive / Docs link. You need the Apps Script “Web app URL” (script.google.com/macros/s/…/exec).';
   if (/script\.google\.com\/(home|d\/)/.test(u)) return 'This is the script editor link. In the editor: Deploy → New deployment → Web app → copy the “Web app URL” (ends in /exec).';
   if (/script\.google\.com\/macros\/s\/.+\/dev$/.test(u)) return 'This is a test (/dev) link that only works for you. Use Deploy → New deployment and copy the URL that ends in /exec.';
   if (/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1)/.test(u)) return undefined;
   return 'Expected a Google Apps Script web-app URL like https://script.google.com/macros/s/…/exec';
+}
+
+/** Spreadsheet id from a normal Sheet link (docs.google.com/spreadsheets/d/<id>/edit…). */
+export function sheetIdFrom(url = ''): string | undefined {
+  return url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/)?.[1];
+}
+
+/** A long random secret for the script; generated once per device setup. */
+export function newToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  return 'qc_' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Code.gs with the token and the user's Sheet baked in — nothing else to configure in Google. */
+export function buildSetupScript(token: string, sheetUrl?: string): string {
+  return scriptSource
+    .replace("const TOKEN = '';", `const TOKEN = '${token}';`)
+    .replace("const SHEET_ID = '';", `const SHEET_ID = '${sheetIdFrom(sheetUrl) ?? ''}';`);
 }
 
 export const isConfigured = (s: GoogleSettings) => !!s.url && !diagnoseUrl(s.url);
