@@ -8,6 +8,9 @@ automatically and safely when a signal returns.
 > Built as a working prototype for a digital quality-management solution in the
 > Bangladesh sourcing context. Factory names and inspection data are fictional demo data.
 
+📘 **Using the app?** Read the **[User Guide](docs/USER_GUIDE.md)** — inspectors, managers and
+people who receive a shared report. This README is for developers.
+
 | Inspections | Live inspection | Defect + photo | Report | Insights |
 |---|---|---|---|---|
 | ![](docs/screenshots/home.png) | ![](docs/screenshots/inspect.png) | ![](docs/screenshots/defect-sheet.png) | ![](docs/screenshots/report.png) | ![](docs/screenshots/insights.png) |
@@ -68,26 +71,24 @@ shell is precached by a Workbox service worker, so it boots with zero connectivi
 6. **Optimistic concurrency**: every edit bumps `version`; a record is only marked synced if it
    wasn’t edited while the upload was in flight, and the server rejects stale versions (`ConflictError`).
 
-**Pluggable backend.** The engine only knows the `SyncAdapter` interface (`pushInspection`,
-`pushPhoto`). The demo ships a mock server in a separate IndexedDB so it runs anywhere without
-keys. A Supabase adapter is ~20 lines:
+**Pluggable backend.** The engine only knows the `SyncAdapter` interface
+(`src/lib/sync/adapter.ts`): `pushInspection`, `pushPhoto`, `pushAttachment`, `pullInspections`,
+`downloadFile`. Two implementations ship:
 
-```ts
-export const supabaseAdapter: SyncAdapter = {
-  async pushInspection(i) {
-    const { error } = await supabase.rpc('upsert_inspection', { payload: i }); // version check in SQL
-    if (error?.code === '40001') throw new ConflictError(error.details as unknown as number);
-    if (error) throw error;
-    return { serverVersion: i.version };
-  },
-  async pushPhoto(p) {
-    const path = `${p.inspectionId}/${p.id}.jpg`;
-    const { error } = await supabase.storage.from('qc-photos').upload(path, p.blob, { upsert: true });
-    if (error) throw error;
-    return { url: supabase.storage.from('qc-photos').getPublicUrl(path).data.publicUrl };
-  },
-};
-```
+| Adapter | When | Notes |
+|---|---|---|
+| `supabaseAdapter.ts` | `VITE_SUPABASE_*` set | RPC `upsert_inspection` / `pull_inspections`, private Storage bucket `qc-files`; maps Postgres errors → `ConflictError` (40001), `PermissionError` (42501, not retried), `NetworkError` (retried) |
+| `mockServer.ts` | no keys (demo mode) | separate IndexedDB "server" with simulated latency and failures — runs anywhere, no account |
+
+Swapping in Firebase or a REST API means writing one more adapter; queue, retries and UI stay as they are.
+
+**Accounts on a device** (`src/lib/sync/index.ts`)
+- Work done **before signing in** is kept on the device and uploaded on the **first sign-in**
+  (inspections, photos, attachments — "backfill").
+- If a **different user** signs in on the same device, the previous user's local copy is cleared
+  (it lives in the cloud) so it can never be uploaded under the wrong account. Sign-out warns if
+  anything is still waiting to upload.
+- Records created before the `factoryName` snapshot existed get it filled in on push.
 
 ## Sharing & permissions (Supabase)
 
@@ -128,15 +129,57 @@ sequenceDiagram
 
 ### Supabase setup (≈10 minutes, free tier)
 
-1. Create a project at [supabase.com](https://supabase.com) (region: Singapore is closest to Dhaka).
-2. **SQL Editor** → paste `supabase/schema.sql` → **Run**.
-3. **Authentication → Providers → Email**: for a quick demo, turn **off** "Confirm email".
-4. **Authentication → URL Configuration**: add your deployed URL and `http://localhost:5173`.
-5. **Project Settings → API**: copy *Project URL* and *anon public* key into `.env.local`
-   (see `.env.example`), then restart `npm run dev`. On Vercel, add the same two variables.
+1. **Create a project** at [supabase.com](https://supabase.com) → *New project*. Save the database
+   password. (Singapore / Tokyo are the closest regions to Dhaka.)
+2. **App keys** → dashboard **Connect** button, or *Project Settings → API Keys / Data API*.
+   Put them in `.env` (or `.env.local`; both are git-ignored — see `.env.example`):
 
-Without these variables the app runs in **demo mode** against the on-device mock server — everything
-works except accounts and sending.
+   ```bash
+   VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=sb_publishable_...   # or the legacy "anon public" eyJ... key
+   ```
+
+   | Key | Put it in the app? |
+   |---|---|
+   | **anon / public / Publishable** (`sb_publishable_…`) | ✅ Yes — designed for the browser; RLS decides what it can do |
+   | **service_role / Secret** (`sb_secret_…`) | ❌ **Never** — bypasses all security rules |
+
+3. **Create the database objects** — either:
+   - *Dashboard:* **SQL Editor** → *New query* → paste `supabase/schema.sql` → **Run**; or
+   - *Command line:* add the **Session pooler** connection string (dashboard **Connect** → *Session
+     pooler* → URI) to `.env` **without** a `VITE_` prefix, so it is never bundled into the app:
+
+     ```bash
+     SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<db-password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres
+     ```
+     then `set -a; source .env; set +a; psql "$SUPABASE_DB_URL" -f supabase/schema.sql`.
+     The script is idempotent — safe to run again after changes.
+
+     *Troubleshooting:* `tenant/user … not found` means the pooler **host/region** is wrong —
+     copy it exactly from the Connect dialog (e.g. `aws-1-ap-northeast-1`). Use the Session pooler,
+     not "Direct connection" (IPv6-only on many networks). Passwords containing `@ # / :` must be
+     URL-encoded.
+4. **Authentication → Sign In / Providers → User Signups**: keep *Allow new users to sign up* ON,
+   *Allow anonymous sign-ins* OFF. For a demo, turn **Confirm email** OFF (new accounts can sign in
+   immediately); turn it back ON for production.
+5. **Authentication → URL Configuration**: add your deployed URL and `http://localhost:5173`.
+6. Restart `npm run dev`. *Settings* now shows **Cloud account** instead of "Demo mode".
+   On Vercel/Netlify add the two `VITE_` variables (never `SUPABASE_DB_URL`).
+
+**Check the connection** (no secrets printed):
+
+```bash
+set -a; source .env; set +a
+curl -s -H "apikey: $VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_URL/rest/v1/inspections?select=id&limit=1"
+# []  → connected, schema installed (empty because you're not signed in — RLS)
+# PGRST205 "Could not find the table" → schema.sql not run yet
+```
+
+> After a demo, rotate the database password (*Project Settings → Database*) if it was ever shared,
+> and remove `SUPABASE_DB_URL` from `.env` — the app never needs it.
+
+Without the `VITE_` variables the app runs in **demo mode** against the on-device mock server —
+everything works except accounts and sending.
 
 **Storage durability.** The app requests `navigator.storage.persist()` so the browser won’t evict
 inspection data under storage pressure.
@@ -144,7 +187,8 @@ inspection data under storage pressure.
 ## Tech stack
 
 React 18 · TypeScript (strict) · Vite · Tailwind CSS v4 · Dexie (IndexedDB) · Workbox via
-vite-plugin-pwa · Vitest + fake-indexeddb · lucide icons. No runtime network dependencies
+vite-plugin-pwa · Supabase (Postgres, Auth, Storage, RLS) · jsPDF + autotable · pdf.js ·
+Vitest + fake-indexeddb · lucide icons. No runtime network dependencies
 (system fonts, inline icons) — nothing breaks offline.
 
 ## Run it
@@ -174,11 +218,13 @@ Push to GitHub, then import the repo on **Vercel** or **Netlify** (framework: Vi
 3. **Flaky network:** Settings → *Flaky 3G* → watch retries with backoff in the outbox list.
 4. **PDF:** open a report → *Preview PDF* (2+ page report) → *Download*. Upload a PDF under
    *Attached reports* → tap it to preview.
-5. **Sharing (needs Supabase):** sign in as user A on the phone, *Send* a report with only *View*.
+5. **Cloud sync (needs Supabase):** sign in → within seconds the pill shows *All synced* and
+   Supabase *Table Editor → inspections* lists your reports (existing on-device work included).
+6. **Sharing (needs Supabase):** sign in as user A on the phone, *Send* a report with only *View*.
    Open the link in an incognito window, sign up as user B → report opens, **no download / edit**.
    On A, switch on *Edit* for that link → B (after sync) sees *Edit inspection*; B changes a comment
    → A sees it after the next sync. A taps 🗑 *Revoke* → the report disappears from B.
-6. **Permissions on the server:** `npm run test:db` → 30 passed.
+7. **Permissions on the server:** `npm run test:db` → 30 passed.
 
 ## Project layout
 
@@ -195,11 +241,15 @@ src/
     pdf.ts            on-device PDF report generation (lazy-loaded)
     share.ts          share links: create, update, revoke, redeem
     supabase.ts       client + session store (works offline)
+    files.ts          file names & download helper
   pages/              Inspections, NewInspection, Inspect, Report, Insights, Settings, SharedLink
   components/         AppShell, SyncPill, DefectSheet, PdfViewer, ShareDialog, AuthForm, UI primitives
 supabase/
   schema.sql          tables, RLS policies, RPCs, storage bucket & policies
   test/               Postgres permission test-suite (stubs Supabase auth/storage)
+docs/
+  USER_GUIDE.md       end-user guide (inspectors, managers, recipients)
+  screenshots/
 ```
 
 ## Roadmap to production

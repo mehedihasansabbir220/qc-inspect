@@ -92,7 +92,10 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
       (await db.attachments.where('inspectionId').equals(inspection.id).filter((a) => !a.uploaded).count());
     if (waiting > 0) throw new Error(`Waiting for ${waiting} file(s) to upload`);
 
-    await adapter.pushInspection(toPayload(inspection));
+    const payload = toPayload(inspection);
+    // Older records predate the factoryName snapshot — fill it so recipients see a name, not an id.
+    if (!payload.factoryName) payload.factoryName = (await db.factories.get(payload.factoryId))?.name;
+    await adapter.pushInspection(payload);
     await db.transaction('rw', db.inspections, async () => {
       const current = await db.inspections.get(inspection.id);
       // Only mark synced if nobody edited it while the request was in flight
