@@ -52,6 +52,13 @@ export interface Inspection {
   completedAt?: number;
   /** Snapshot so the name still shows on devices that don't have this factory in master data. */
   factoryName?: string;
+  factoryLocation?: string;
+  /** Buyer / client the goods are inspected for (shown on the report cover). */
+  buyer?: string;
+  /** Factory representative who witnessed the inspection and signs the report. */
+  factoryRep?: string;
+  /** PNG data-URLs captured on screen. Small (~10 KB), so they travel inside the record. */
+  signatures?: { inspector?: string; factory?: string; signedAt?: number };
   attachments?: AttachmentMeta[];
   /** Local-only: who owns this record and what this user may do with it. Never pushed. */
   access?: Access;

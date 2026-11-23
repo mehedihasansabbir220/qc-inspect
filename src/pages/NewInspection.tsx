@@ -5,7 +5,7 @@ import { ArrowLeft, Info, PlayCircle } from 'lucide-react';
 import { TopBar } from '../components/AppShell';
 import { Segmented } from '../components/ui';
 import { AQL_VALUES, samplingPlan, type AqlValue, type InspectionLevel } from '../lib/aql';
-import { db, getSetting, type InspectionType } from '../lib/db';
+import { db, getSetting, setSetting, type InspectionType } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { createInspection } from '../lib/repo';
 import { PRODUCTS } from '../lib/seed';
@@ -15,6 +15,7 @@ export function NewInspection() {
   const navigate = useNavigate();
   const factories = useLiveQuery(() => db.factories.toArray(), []);
   const [form, setForm] = useState({
+    buyer: '',
     factoryId: '',
     poNumber: '',
     style: '',
@@ -27,6 +28,13 @@ export function NewInspection() {
   });
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Remember the last order's buyer / factory / AQL setup — inspectors often do several POs in a row.
+  useEffect(() => {
+    getSetting<Partial<typeof form> | null>('lastNewInspection', null).then((last) => {
+      if (last) setForm((f) => ({ ...f, ...last, poNumber: '', style: '' }));
+    });
+  }, []);
+
   useEffect(() => {
     if (factories?.length && !form.factoryId) set('factoryId', factories[0].id);
   }, [factories, form.factoryId]);
@@ -38,7 +46,10 @@ export function NewInspection() {
     e.preventDefault();
     if (!valid) return;
     const inspector = await getSetting('inspector', 'Inspector');
-    const id = await createInspection({ ...form, poNumber: form.poNumber.trim(), style: form.style.trim(), inspector });
+    const { poNumber: _p, style: _s, ...defaults } = form;
+    void _p, void _s;
+    await setSetting('lastNewInspection', defaults);
+    const id = await createInspection({ ...form, buyer: form.buyer.trim() || undefined, poNumber: form.poNumber.trim(), style: form.style.trim(), inspector });
     navigate(`/inspect/${id}`, { replace: true });
   }
 
@@ -54,6 +65,10 @@ export function NewInspection() {
       />
       <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4 px-4 pt-4 pb-36">
         <section className="card space-y-4 p-4">
+          <div>
+            <label className="label" htmlFor="buyer">{t('buyer')}</label>
+            <input id="buyer" className="field" placeholder="e.g. Nordic Home AB" value={form.buyer} onChange={(e) => set('buyer', e.target.value)} autoComplete="organization" />
+          </div>
           <div>
             <label className="label" htmlFor="factory">{t('factory')}</label>
             <select id="factory" className="field" value={form.factoryId} onChange={(e) => set('factoryId', e.target.value)}>

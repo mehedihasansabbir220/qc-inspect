@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { SignaturePad } from '../components/SignaturePad';
+import { ResultPill } from '../components/ui';
+import { overallResult, reportSections } from '../lib/report';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, Check, CheckCircle2, Cloud, FileText, Minus, Plus, Ruler, Trash2, XCircle } from 'lucide-react';
@@ -21,10 +25,24 @@ export function Inspect() {
   const insp = useLiveQuery(() => db.inspections.get(id), [id]);
   const factory = useLiveQuery(() => (insp ? db.factories.get(insp.factoryId) : undefined), [insp?.factoryId]);
 
+  useEffect(() => {
+    // Braces matter: scrollTo returns a Promise in newer browsers, and React would call it as a cleanup.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [tab]);
+
   if (!insp) return null;
 
   const counts = tally(insp.defects);
   const outOfTol = insp.measurements.reduce((n, m) => n + m.values.filter((v) => v != null && Math.abs(v - m.spec) > m.tol).length, 0);
+  const readingsDone = insp.measurements.every((m) => m.values.every((v) => v != null));
+  const checklistDone = CHECKLIST.every((c) => insp.checklist[c.id]);
+  const steps: { key: Tab; label: string; done: boolean; badge?: number }[] = [
+    { key: 'defects', label: t('defects'), done: insp.inspected >= insp.plan.sampleSize || insp.verdict === 'fail', badge: insp.defects.length },
+    { key: 'measure', label: t('measure'), done: readingsDone, badge: outOfTol },
+    { key: 'checklist', label: t('checklist'), done: checklistDone },
+    { key: 'finish', label: t('finish'), done: insp.status === 'completed' },
+  ];
+  const idx = steps.findIndex((s) => s.key === tab);
 
   return (
     <>
@@ -37,26 +55,33 @@ export function Inspect() {
           </button>
         }
       />
-      <main className="mx-auto max-w-2xl px-4 pt-4 pb-16">
+      <main className="mx-auto max-w-2xl px-4 pt-4 pb-28">
         <VerdictPanel insp={insp} counts={counts} />
 
-        <div className="no-print sticky top-14 z-20 -mx-4 mt-4 bg-ink-100/95 px-4 py-2 backdrop-blur">
-          <div className="seg">
-            {(
-              [
-                ['defects', t('defects'), insp.defects.length],
-                ['measure', t('measure'), outOfTol],
-                ['checklist', t('checklist'), 0],
-                ['finish', t('finish'), 0],
-              ] as const
-            ).map(([k, label, badge]) => (
-              <button key={k} aria-pressed={tab === k} onClick={() => setTab(k)} className="relative">
-                {label}
-                {badge > 0 && <span className="ml-1 rounded-full bg-ink-900 px-1.5 text-[10px] text-white tabular-nums">{badge}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Step progress — tap any step, or use Next below */}
+        <nav className="no-print sticky top-14 z-20 -mx-4 mt-4 bg-ink-100/95 px-4 py-2.5 backdrop-blur" aria-label="Inspection steps">
+          <ol className="flex items-center">
+            {steps.map((s, i) => {
+              const active = s.key === tab;
+              return (
+                <li key={s.key} className="flex flex-1 items-center last:flex-none">
+                  <button onClick={() => setTab(s.key)} className="flex flex-col items-center gap-1" aria-current={active ? 'step' : undefined}>
+                    <span
+                      className={`relative grid size-8 place-items-center rounded-full text-sm font-bold transition ${
+                        active ? 'bg-ink-900 text-white ring-4 ring-ink-900/15' : s.done ? 'bg-brand-600 text-white' : 'bg-white text-ink-500 ring-1 ring-ink-200'
+                      }`}
+                    >
+                      {s.done && !active ? <Check className="size-4" strokeWidth={3} /> : i + 1}
+                      {!!s.badge && <span className="absolute -top-1.5 -right-2 rounded-full bg-major px-1 text-[10px] leading-4 text-white tabular-nums">{s.badge}</span>}
+                    </span>
+                    <span className={`text-[11px] font-semibold ${active ? 'text-ink-900' : 'text-ink-500'}`}>{s.label}</span>
+                  </button>
+                  {i < steps.length - 1 && <span className={`mx-1 mb-5 h-0.5 flex-1 rounded ${s.done ? 'bg-brand-500' : 'bg-ink-200'}`} />}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
 
         <div className="mt-2">
           {tab === 'defects' && <DefectsTab insp={insp} />}
@@ -65,6 +90,21 @@ export function Inspect() {
           {tab === 'finish' && <FinishTab insp={insp} outOfTol={outOfTol} />}
         </div>
       </main>
+
+      {tab !== 'finish' && (
+        <div className="no-print pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-ink-200 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex max-w-2xl gap-2 px-4 pt-3">
+            {idx > 0 && (
+              <button className="btn-ghost !px-4" onClick={() => setTab(steps[idx - 1].key)}>
+                <ChevronLeft className="size-5" /> {t('back')}
+              </button>
+            )}
+            <button className="btn-primary flex-1 text-base" onClick={() => setTab(steps[idx + 1].key)}>
+              {t('next')}: {steps[idx + 1].label} <ChevronRight className="size-5" />
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -141,13 +181,44 @@ function VerdictPanel({ insp, counts }: { insp: Inspection; counts: ReturnType<t
 function DefectsTab({ insp }: { insp: Inspection }) {
   const { t, pick } = useI18n();
   const [active, setActive] = useState<DefectType | null>(null);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const matches = q ? DEFECTS.filter((d) => `${d.code} ${d.en} ${d.bn}`.toLowerCase().includes(q)) : [];
   const counts = new Map<string, number>();
   for (const d of insp.defects) counts.set(d.code, (counts.get(d.code) ?? 0) + d.qty);
   const editable = insp.status === 'draft';
 
   return (
     <div className="space-y-5">
+      {editable && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-ink-400" />
+          <input className="field !pl-10" placeholder={t('searchDefects')} value={query} onChange={(e) => setQuery(e.target.value)} aria-label={t('searchDefects')} />
+          {query && (
+            <button className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-ink-400 hover:bg-ink-100" onClick={() => setQuery('')} aria-label={t('clear')}>
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+      )}
+      {editable && q && (
+        <section>
+          {matches.length === 0 ? (
+            <p className="card p-4 text-sm text-ink-500">No defect matches “{query}”.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {matches.map((d) => (
+                <button key={d.code} onClick={() => setActive(d)} className="card flex min-h-16 items-center gap-2 p-3 text-left transition active:scale-[0.97]">
+                  <span className={`h-8 w-1 shrink-0 rounded-full ${SEVERITY_STYLE[d.severity].bar}`} />
+                  <span className="text-sm leading-tight font-semibold">{pick(d)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {editable &&
+        !q &&
         CATEGORIES.map((cat) => (
           <section key={cat.id}>
             <h3 className="mb-2 px-1 text-xs font-bold tracking-wide text-ink-500 uppercase">{pick(cat)}</h3>
@@ -268,7 +339,9 @@ function MeasureTab({ insp }: { insp: Inspection }) {
 
 function MeasureCell({ value, spec, tol, disabled, onCommit }: { value: number | null; spec: number; tol: number; disabled: boolean; onCommit: (raw: string) => void }) {
   const [raw, setRaw] = useState(value?.toString() ?? '');
-  useEffect(() => setRaw(value?.toString() ?? ''), [value]);
+  useEffect(() => {
+    setRaw(value?.toString() ?? '');
+  }, [value]);
   const num = raw === '' ? null : Number(raw.replace(',', '.'));
   const bad = num != null && !Number.isNaN(num) && Math.abs(num - spec) > tol;
   const ok = num != null && !bad;
@@ -329,7 +402,12 @@ function FinishTab({ insp, outOfTol }: { insp: Inspection; outOfTol: number }) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [comments, setComments] = useState(insp.comments);
+  const [rep, setRep] = useState(insp.factoryRep ?? '');
   const [busy, setBusy] = useState(false);
+  const sections = reportSections(insp);
+  const predicted = overallResult(sections);
+  const setSig = (who: 'inspector' | 'factory', dataUrl?: string) =>
+    updateInspection(insp.id, (i) => ({ signatures: { ...i.signatures, [who]: dataUrl, signedAt: Date.now() } }));
   const unanswered = CHECKLIST.filter((c) => !insp.checklist[c.id]).length;
   const nok = CHECKLIST.filter((c) => insp.checklist[c.id] === 'nok').length;
   const sampleDone = insp.inspected >= insp.plan.sampleSize;
@@ -343,13 +421,27 @@ function FinishTab({ insp, outOfTol }: { insp: Inspection; outOfTol: number }) {
 
   async function finish() {
     setBusy(true);
-    await updateInspection(insp.id, { comments });
+    await updateInspection(insp.id, { comments, factoryRep: rep.trim() || undefined });
     await completeInspection(insp.id);
     navigate(`/report/${insp.id}`, { replace: true });
   }
 
   return (
     <div className="space-y-4">
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
+          <span className="text-sm font-bold uppercase">Report preview</span>
+          <ResultPill result={predicted} />
+        </div>
+        <ul className="divide-y divide-ink-100">
+          {sections.map((s) => (
+            <li key={s.key} className="flex items-center gap-3 px-4 py-2 text-sm">
+              <span className="flex-1">{s.title}</span>
+              <ResultPill result={s.result} />
+            </li>
+          ))}
+        </ul>
+      </section>
       <ul className="card divide-y divide-ink-100">
         {warnings.map((w) => (
           <li key={w.text} className="flex items-center gap-3 p-3 text-sm">
@@ -369,6 +461,24 @@ function FinishTab({ insp, outOfTol }: { insp: Inspection; outOfTol: number }) {
           placeholder="e.g. Shade variation concentrated in carton 14–18; factory agreed to re-sort before shipment."
         />
       </div>
+      <section className="card space-y-4 p-4">
+        <h3 className="text-sm font-bold uppercase">{t('signatures')}</h3>
+        <div>
+          <label className="label" htmlFor="rep">{t('factoryRep')}</label>
+          <input
+            id="rep"
+            className="field"
+            placeholder="Name, e.g. Mr. Karim (QA Manager)"
+            value={rep}
+            disabled={insp.status !== 'draft'}
+            onChange={(e) => setRep(e.target.value)}
+            onBlur={() => rep !== (insp.factoryRep ?? '') && updateInspection(insp.id, { factoryRep: rep.trim() || undefined })}
+          />
+        </div>
+        <SignaturePad label={`${t('inspector')} · ${insp.inspector}`} value={insp.signatures?.inspector} onChange={(v) => setSig('inspector', v)} disabled={insp.status !== 'draft'} />
+        <SignaturePad label={t('factoryRep')} value={insp.signatures?.factory} onChange={(v) => setSig('factory', v)} disabled={insp.status !== 'draft'} />
+        <p className="text-xs text-ink-500">Signatures appear on the PDF report. The factory representative signs to acknowledge the findings.</p>
+      </section>
       {insp.status === 'draft' ? (
         <>
           <button className="btn-brand w-full text-base" onClick={finish} disabled={!canComplete || busy}>

@@ -6,6 +6,7 @@ import { syncEngine } from './sync';
 import { computeVerdict, tally } from './verdict';
 
 export interface NewInspectionInput {
+  buyer?: string;
   factoryId: string;
   poNumber: string;
   style: string;
@@ -24,6 +25,7 @@ export async function createInspection(input: NewInspectionInput): Promise<strin
   const factory = await db.factories.get(input.factoryId);
   await db.inspections.add({
     factoryName: factory?.name,
+    factoryLocation: factory?.location,
     attachments: [],
     access: OWNER_ACCESS,
     id,

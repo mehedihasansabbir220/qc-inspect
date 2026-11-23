@@ -5,6 +5,7 @@ import { DEFECTS, defectByCode } from '../lib/defects';
 import { db, type Inspection } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { tally } from '../lib/verdict';
+import { overallOf } from '../lib/report';
 
 function toCsv(rows: Inspection[], factoryName: (id: string) => string) {
   const header = ['inspection_id', 'completed_at', 'factory', 'po', 'style', 'product', 'type', 'lot_size', 'sample_size', 'aql_major', 'aql_minor', 'critical', 'major', 'minor', 'verdict', 'inspector', 'sync_state'];
@@ -29,13 +30,13 @@ export function Insights() {
 
   const { inspections, factories } = data;
   const fname = (id: string) => factories.find((f) => f.id === id)?.name ?? id;
-  const passed = inspections.filter((i) => i.verdict === 'pass').length;
+  const passed = inspections.filter((i) => overallOf(i) === 'pass').length;
   const passRate = inspections.length ? Math.round((passed / inspections.length) * 100) : 0;
 
   const byFactory = factories
     .map((f) => {
       const list = inspections.filter((i) => i.factoryId === f.id);
-      const p = list.filter((i) => i.verdict === 'pass').length;
+      const p = list.filter((i) => overallOf(i) === 'pass').length;
       return { name: f.name, total: list.length, rate: list.length ? Math.round((p / list.length) * 100) : 0 };
     })
     .filter((r) => r.total > 0)

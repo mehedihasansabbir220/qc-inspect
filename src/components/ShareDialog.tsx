@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Check, CloudUpload, Copy, Download, Link2, Mail, MessageCircle, Pencil, Send, ShieldCheck, Trash2, Users, X } from 'lucide-react';
 import type { Inspection } from '../lib/db';
+import { RESULT_LABEL, overallOf, reportNumber } from '../lib/report';
 import { createShare, listShares, shareUrl, updateShare, type ShareLink } from '../lib/share';
 import { cloudEnabled, useSession } from '../lib/supabase';
 import { syncEngine, useNetwork } from '../lib/sync';
@@ -33,7 +34,7 @@ function Toggle({ on, onChange, disabled, label, hint, icon }: { on: boolean; on
 export function ShareDialog({ inspection, subject, onClose }: Props) {
   const session = useSession();
   const { online } = useNetwork();
-  const [canDownload, setCanDownload] = useState(false);
+  const [canDownload, setCanDownload] = useState(true); // default: buyer preset
   const [canEdit, setCanEdit] = useState(false);
   const [links, setLinks] = useState<ShareLink[]>();
   const [newToken, setNewToken] = useState<string>();
@@ -84,7 +85,28 @@ export function ShareDialog({ inspection, subject, onClose }: Props) {
     setTimeout(() => setCopied(undefined), 1800);
   }
 
-  const message = (token: string) => `QC report ${inspection.poNumber} / ${inspection.style} (${inspection.verdict.toUpperCase()}): ${shareUrl(token)}`;
+  const overall = RESULT_LABEL[overallOf(inspection)];
+  /** Professional message a buyer expects, ready for WhatsApp / e-mail. */
+  const message = (token: string) =>
+    [
+      `Dear ${inspection.buyer ? `${inspection.buyer} team` : 'Sir / Madam'},`,
+      '',
+      `Please find the ${inspection.type === 'final' ? 'final random' : inspection.type} inspection report below.`,
+      `Report: ${reportNumber(inspection)}`,
+      `PO / Style: ${inspection.poNumber} / ${inspection.style} — ${inspection.productCategory}`,
+      `Factory: ${inspection.factoryName ?? ''}`,
+      `Overall result: ${overall}`,
+      '',
+      `Open the report (sign-in required): ${shareUrl(token)}`,
+      '',
+      'Best regards,',
+      inspection.inspector,
+    ].join('\n');
+  const PRESETS = [
+    { label: 'Buyer', hint: 'View + download', dl: true, ed: false },
+    { label: 'QA colleague', hint: 'View + download + edit', dl: true, ed: true },
+    { label: 'View only', hint: 'No download, no edit', dl: false, ed: false },
+  ];
 
   let body: React.ReactNode;
   if (!cloudEnabled) {
@@ -109,6 +131,25 @@ export function ShareDialog({ inspection, subject, onClose }: Props) {
   } else {
     body = (
       <div className="space-y-4">
+        <div>
+          <span className="label">Who is it for?</span>
+          <div className="grid grid-cols-3 gap-2">
+            {PRESETS.map((p) => {
+              const on = canDownload === p.dl && canEdit === p.ed;
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => (setCanDownload(p.dl), setCanEdit(p.ed))}
+                  className={`rounded-xl p-2.5 text-left ring-1 transition ${on ? 'bg-ink-900 text-white ring-ink-900' : 'bg-white ring-ink-200 hover:ring-ink-400'}`}
+                >
+                  <span className="block text-sm font-bold">{p.label}</span>
+                  <span className={`block text-[11px] leading-tight ${on ? 'text-ink-300' : 'text-ink-500'}`}>{p.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="space-y-2">
           <Toggle on icon={<ShieldCheck className="size-5" />} label="View" hint="Always on: open the report and preview PDFs in the app" onChange={() => {}} disabled />
           <Toggle on={canDownload} onChange={setCanDownload} icon={<Download className="size-5" />} label="Allow download" hint="Save the generated PDF and attached files" />
@@ -138,6 +179,10 @@ export function ShareDialog({ inspection, subject, onClose }: Props) {
                 <Send className="size-4" /> More
               </button>
             </div>
+            <details className="rounded-lg bg-white/5 px-3 py-2 text-xs text-ink-300">
+              <summary className="cursor-pointer font-semibold text-white">Message preview</summary>
+              <pre className="mt-2 font-sans whitespace-pre-wrap">{message(newToken)}</pre>
+            </details>
           </div>
         )}
 

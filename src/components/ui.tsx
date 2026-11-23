@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertOctagon, CheckCircle2, CloudOff, CloudUpload, Cloud, Loader2, XCircle } from 'lucide-react';
+import { AlertOctagon, CheckCircle2, Clock, CloudOff, CloudUpload, Cloud, Loader2, XCircle } from 'lucide-react';
 import type { Severity } from '../lib/defects';
 import type { SyncState } from '../lib/db';
 import type { Verdict } from '../lib/verdict';
@@ -11,10 +11,30 @@ export const SEVERITY_STYLE: Record<Severity, { text: string; bg: string; bar: s
   minor: { text: 'text-minor', bg: 'bg-yellow-50', bar: 'bg-minor', ring: 'ring-yellow-200' },
 };
 
-export function VerdictBadge({ verdict, status, size = 'sm' }: { verdict: Verdict; status?: 'draft' | 'completed'; size?: 'sm' | 'lg' }) {
+export const RESULT_TONE = {
+  pass: { pill: 'bg-brand-50 text-brand-600 ring-emerald-200', solid: 'from-emerald-600 to-emerald-800', dot: 'bg-brand-500' },
+  fail: { pill: 'bg-red-50 text-crit ring-red-200', solid: 'from-red-600 to-red-800', dot: 'bg-crit' },
+  pending: { pill: 'bg-amber-50 text-amber-700 ring-amber-200', solid: 'from-amber-500 to-amber-700', dot: 'bg-amber-500' },
+  na: { pill: 'bg-ink-100 text-ink-500 ring-ink-200', solid: 'from-ink-600 to-ink-800', dot: 'bg-ink-400' },
+  'in-progress': { pill: 'bg-ink-100 text-ink-600 ring-ink-200', solid: 'from-ink-700 to-ink-900', dot: 'bg-ink-400' },
+} as const;
+
+/** Compact result pill: PASS / FAIL / PENDING / N/A. */
+export function ResultPill({ result }: { result: keyof typeof RESULT_TONE }) {
+  const label = { pass: 'PASS', fail: 'FAIL', pending: 'PENDING', na: 'N/A', 'in-progress': 'IN PROGRESS' }[result];
+  return <span className={`inline-flex min-w-16 justify-center rounded-full px-2 py-0.5 text-[11px] font-bold tracking-wide ring-1 ${RESULT_TONE[result].pill}`}>{label}</span>;
+}
+
+export function VerdictBadge({ verdict, status, size = 'sm' }: { verdict: Verdict | 'pending'; status?: 'draft' | 'completed'; size?: 'sm' | 'lg' }) {
   const { t } = useI18n();
   const big = size === 'lg';
   const cls = big ? 'px-3 py-1.5 text-sm gap-1.5' : 'px-2 py-0.5 text-xs gap-1';
+  if (verdict === 'pending')
+    return (
+      <span className={`inline-flex items-center rounded-full bg-amber-50 font-bold text-amber-700 ring-1 ring-amber-200 ${cls}`}>
+        <Clock className={big ? 'size-4' : 'size-3'} /> {t('resultPending')}
+      </span>
+    );
   if (verdict === 'fail')
     return (
       <span className={`inline-flex items-center rounded-full bg-red-50 font-bold text-crit ring-1 ring-red-200 ${cls}`}>

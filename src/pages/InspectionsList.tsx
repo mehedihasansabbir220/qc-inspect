@@ -10,6 +10,8 @@ import { db, type Inspection } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { useNetwork } from '../lib/sync';
 import { tally } from '../lib/verdict';
+import { overallOf } from '../lib/report';
+import { ArrowRight, PlayCircle } from 'lucide-react';
 
 type Filter = 'all' | 'draft' | 'completed' | 'shared';
 
@@ -26,8 +28,9 @@ export function InspectionsList() {
 
   const weekAgo = Date.now() - 7 * 86_400_000;
   const completedWeek = inspections.filter((i) => i.status === 'completed' && (i.completedAt ?? 0) > weekAgo);
-  const passRate = completedWeek.length ? Math.round((completedWeek.filter((i) => i.verdict === 'pass').length / completedWeek.length) * 100) : 0;
+  const passRate = completedWeek.length ? Math.round((completedWeek.filter((i) => overallOf(i) === 'pass').length / completedWeek.length) * 100) : 0;
   const drafts = inspections.filter((i) => i.status === 'draft').length;
+  const lastDraft = inspections.find((i) => i.status === 'draft' && i.access?.role !== 'shared');
   const sharedCount = inspections.filter((i) => i.access?.role === 'shared').length;
   const shown = inspections.filter((i) => (filter === 'all' ? true : filter === 'shared' ? i.access?.role === 'shared' : i.status === filter));
 
@@ -52,6 +55,27 @@ export function InspectionsList() {
               <b>Sign in to sync & send reports.</b> Your work stays safe on this device until then.
             </span>
             <ChevronRight className="size-4" />
+          </Link>
+        )}
+
+        {lastDraft && (
+          <Link to={`/inspect/${lastDraft.id}`} className="mb-4 block overflow-hidden rounded-2xl bg-ink-900 text-white shadow-lg transition active:scale-[0.99]">
+            <div className="flex items-center gap-3 p-4">
+              <div className="grid size-11 place-items-center rounded-xl bg-brand-500/20 text-emerald-300">
+                <PlayCircle className="size-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-semibold tracking-wide text-emerald-300 uppercase">{t('continueInspection')}</div>
+                <div className="truncate font-semibold">
+                  {lastDraft.poNumber} · {lastDraft.style}
+                </div>
+                <div className="truncate text-xs text-ink-400">{lastDraft.factoryName ?? factories.get(lastDraft.factoryId)?.name}</div>
+              </div>
+              <ArrowRight className="size-5 text-ink-400" />
+            </div>
+            <div className="h-1.5 bg-white/10">
+              <div className="h-full bg-brand-500" style={{ width: `${Math.min(100, (lastDraft.inspected / lastDraft.plan.sampleSize) * 100)}%` }} />
+            </div>
           </Link>
         )}
 
@@ -121,11 +145,12 @@ function InspectionRow({ insp, factoryName, lang }: { insp: Inspection; factoryN
               <SyncIcon state={insp.syncState} className="size-3.5 shrink-0" />
             </div>
             <div className="truncate text-sm text-ink-500">
+              {insp.buyer ? `${insp.buyer} · ` : ''}
               {insp.poNumber} · {insp.style} · {insp.productCategory}
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <VerdictBadge verdict={insp.verdict} status={insp.status} />
+            <VerdictBadge verdict={overallOf(insp)} status={insp.status} />
             <span className="text-[11px] text-ink-400">{relativeTime(insp.updatedAt, lang)}</span>
           </div>
           <ChevronRight className="mt-2 size-4 shrink-0 text-ink-400" />

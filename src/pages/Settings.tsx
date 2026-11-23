@@ -17,6 +17,7 @@ export function Settings() {
   const { mode, online } = useNetwork();
   const status = useSyncStatus();
   const [inspector, setInspector] = useState('');
+  const [company, setCompany] = useState('');
   const [storage, setStorage] = useState<{ usage?: number; quota?: number; persisted?: boolean }>({});
   const outbox = useLiveQuery(() => db.outbox.orderBy('nextAttemptAt').toArray(), []);
   const serverCount = useLiveQuery(() => serverDb.inspections.count(), []);
@@ -24,6 +25,7 @@ export function Settings() {
 
   useEffect(() => {
     getSetting('inspector', '').then(setInspector);
+    getSetting('companyName', '').then(setCompany);
     (async () => {
       const est = await navigator.storage?.estimate?.();
       const persisted = await navigator.storage?.persisted?.();
@@ -39,6 +41,10 @@ export function Settings() {
           <div>
             <label className="label" htmlFor="insp">{t('inspector')}</label>
             <input id="insp" className="field" value={inspector} placeholder="Your name" onChange={(e) => setInspector(e.target.value)} onBlur={() => setSetting('inspector', inspector.trim())} />
+          </div>
+          <div>
+            <label className="label" htmlFor="company">Company name on reports</label>
+            <input id="company" className="field" value={company} placeholder="e.g. Your Sourcing Ltd — QA Department" onChange={(e) => setCompany(e.target.value)} onBlur={() => setSetting('companyName', company.trim())} />
           </div>
           <div>
             <span className="label">{t('language')}</span>

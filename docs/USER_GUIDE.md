@@ -29,8 +29,8 @@ QC Inspect is a web app that installs like a normal app — no Play Store needed
 ### Create your account
 1. Tap **Settings** (bottom right) → **Cloud account** → **Create account**.
 2. Enter your work e-mail and a password (at least 6 characters).
-3. Also in Settings: type your **name** under *Inspector* (it appears on every report) and choose
-   your **language** — **English** or **বাংলা**.
+3. Also in Settings: type your **name** under *Inspector* and your **company name on reports**
+   (both appear on every PDF), and choose your **language** — **English** or **বাংলা**.
 
 > You can start inspecting before you have an account. Everything is kept on the phone and
 > uploads automatically the first time you sign in.
@@ -70,6 +70,7 @@ Tap the green **➕** button and fill in:
 
 | Field | Example | Tip |
 |---|---|---|
+| Buyer / client | Nordic Home AB | shown on the report cover |
 | Factory | Gazipur Knit Composite | |
 | PO number / Style | PO-25102 / KNT-1048 | |
 | Product | Knit T-shirt | |
@@ -87,7 +88,11 @@ The dark **Sampling plan** card fills in by itself, e.g.:
 - **Re (reject)** = when defects reach this number, the lot **fails**.
 - **Critical** (safety) defects: **one is enough to fail**.
 
-Tap **Start inspection**.
+Tap **Start inspection**. Next time, the app remembers your last buyer, factory and AQL settings —
+you only type the new PO and style.
+
+The inspection has **4 steps**, shown at the top: **1 Defects → 2 Measure → 3 Checklist → 4 Finish**.
+A step turns ✓ green when it's complete. Use the big **Next** button at the bottom, or tap any step.
 
 ### Step 2 — Check pieces and log defects
 At the top you see **Pieces inspected 10 / 125**, the live result, and three counters
@@ -95,7 +100,8 @@ At the top you see **Pieces inspected 10 / 125**, the live result, and three cou
 
 - Each good piece → tap **+ 1 pc OK**. Use **+5** to go faster, **All** when the sample is done,
   **–** to correct a mistake.
-- Found a defect → tap it in the list (e.g. **Broken stitch**). A panel opens:
+- Found a defect → tap it in the list (e.g. **Broken stitch**), or type in **Search defects…**
+  (e.g. "stitch") to find it fast. A panel opens:
   1. **Severity** — pre-selected; change it if needed (Critical / Major / Minor).
   2. **Quantity** — how many of this defect.
   3. **Add photo** — take a picture of the defect (recommended). Photos are shrunk automatically
@@ -123,11 +129,23 @@ measurement of 5 pieces in cm. Values **outside tolerance turn red**, inside tol
 Open the **Checklist** tab and mark each line **✓ OK**, **✗ Not OK** or **N/A**
 (approved sample, quantity, carton marking, labels, drop test, metal detection).
 
-### Step 5 — Finish
-Open the **Finish** tab:
-1. Check the summary (sample done? measurements OK? checklist complete?).
-2. Write your **comments** — what you found and what the factory agreed to do.
-3. Tap **Complete & queue for sync**.
+### Step 5 — Finish & sign
+Open the **Finish** step:
+1. **Report preview** shows the result the buyer will see — each section and the overall
+   **PASS / FAIL / PENDING** (see below).
+2. Check the list (sample done? measurements OK? checklist complete?).
+3. Write your **comments** — what you found and what the factory agreed to do.
+4. **Signatures:** type the **factory representative's** name, then both of you sign on the screen
+   with a finger. Tap *Clear* to sign again. Signatures appear on the PDF.
+5. Tap **Complete & queue for sync**.
+
+**How the overall result is decided** (the same rule third-party inspection companies use):
+
+| Overall | When |
+|---|---|
+| ✅ **PASS** | Every section passed |
+| ❌ **FAIL** | Any section failed — e.g. AQL exceeded, a critical defect, a checklist item *Not OK*, or many measurements out of tolerance (more than 10 %) |
+| ⏳ **PENDING** | Nothing failed, but something is open or needs the buyer's decision — e.g. an unanswered checklist item, or a few measurements slightly out of tolerance |
 
 The report opens. If you are offline it shows *pending* — it uploads by itself later.
 
@@ -137,15 +155,27 @@ The report opens. If you are offline it shows *pending* — it uploads by itself
 
 Open any completed inspection from the list to see its report.
 
+The bar at the bottom of every report:
+
 | Button | What it does |
 |---|---|
-| 👁 **Preview PDF** | Builds the official PDF report and shows it in the app (works offline) |
-| ⬇ **Download** | Saves the PDF to your phone/computer |
-| ➤ **Send** | Share the report with someone — see [section 4](#4-sending-a-report) |
-| ✏ **Edit inspection** | Re-open the inspection to change it; complete it again to re-upload |
+| 👁 **Preview** | Builds the official PDF report and shows it in the app (works offline) |
+| ⬇ **PDF** | Saves the PDF to your phone/computer |
+| ➤ **Share with buyer** | Send the report — see [section 4](#4-sending-a-report) |
 
-The PDF contains: result (PASS/FAIL), order details, sampling plan, defect table, measurements
-(out-of-tolerance in red), checklist, comments, list of attached documents and all defect photos.
+**Edit inspection** (further down the page) re-opens it; complete it again to re-upload.
+
+The PDF follows the layout buyers know from third-party inspection companies:
+
+1. **Cover** — report number (e.g. `QC-2611-34A7F2`), overall result, sample and defect totals
+2. **General information** — buyer, supplier/factory, location, PO, style, product, date, inspector, factory representative, sampling plan
+3. **Summary of results** — Quantity · Product conformity · Workmanship (AQL) · Measurements · Packing, marking & labels · Safety, each PASS / FAIL / PENDING with remarks
+4. **AQL result** — accept/reject numbers vs. defects found
+5. **Defects found** — with the photo next to each defect
+6. **Measurement chart** — out-of-tolerance readings highlighted
+7. **Checklist & on-site tests**, **inspector remarks**
+8. **Signatures** of inspector and factory representative, plus the standard inspection disclaimer
+9. **Photo appendix** — large, numbered photos with captions
 
 ### Attach an existing report (PDF)
 Have a lab test or a third-party inspection report? Attach it to the inspection:
@@ -165,7 +195,8 @@ Sending needs an account and internet. The report must be uploaded first (sync s
 
 1. Open the report → tap **Send** (or ➤ next to an attachment — the link always opens the full
    report **with all its attachments**).
-2. Choose what the person may do:
+2. Tap who it's for — **Buyer** (view + download, the default), **QA colleague** (view + download +
+   edit) or **View only** — or set the switches yourself:
 
    | Permission | They can |
    |---|---|
@@ -173,7 +204,9 @@ Sending needs an account and internet. The report must be uploaded first (sync s
    | **Allow download** | Also save the PDF report and attachments |
    | **Allow edit** | Also change defects, checklist and comments, and add attachments |
 
-3. Tap **Create link**, then send it with **WhatsApp**, **Email**, **Copy**, or **More**.
+3. Tap **Create link**, then send it with **WhatsApp**, **Email**, **Copy**, or **More**. A
+   professional message is filled in for you (greeting, report number, PO/style, factory, overall
+   result, link) — open **Message preview** to see it.
 
 ### Manage who has access
 Open **Send** again on the same report. Under **Active links** you can:
@@ -262,13 +295,14 @@ If the link says *"invalid or was revoked"*, ask the sender for a new one.
 ## Quick reference card
 
 ```
-NEW INSPECTION   ➕ → factory, PO, style, lot size, AQL → Start
+NEW INSPECTION   ➕ → buyer, factory, PO, style, lot size, AQL → Start
 EACH GOOD PIECE  + 1 pc OK     (+5 / All for speed)
-DEFECT           tap defect → severity → photo → Log defect
-FINISH           Measure → Checklist → Finish → comments → Complete
-PDF              open report → Preview PDF / Download
+DEFECT           tap defect (or search) → severity → photo → Log defect
+STEPS            Next → Measure → Next → Checklist → Next → Finish
+FINISH           comments → factory rep name → 2 signatures → Complete
+PDF              open report → Preview / PDF
 ATTACH           Attached reports → Upload PDF
-SEND             Send → View / Download / Edit → Create link → WhatsApp
+SEND             Share with buyer → Buyer → Create link → WhatsApp
 STOP SHARING     Send → Active links → 🗑
 OFFLINE?         keep working — it uploads by itself
 ```

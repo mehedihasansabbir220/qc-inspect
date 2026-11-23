@@ -52,6 +52,18 @@ const dict = {
   cancel: { en: 'Cancel', bn: 'বাতিল' },
   language: { en: 'Language', bn: 'ভাষা' },
   syncNow: { en: 'Sync now', bn: 'এখনই সিঙ্ক করুন' },
+  buyer: { en: 'Buyer / client', bn: 'ক্রেতা' },
+  next: { en: 'Next', bn: 'পরবর্তী' },
+  back: { en: 'Back', bn: 'পিছনে' },
+  searchDefects: { en: 'Search defects…', bn: 'ত্রুটি খুঁজুন…' },
+  continueInspection: { en: 'Continue inspection', bn: 'পরিদর্শন চালিয়ে যান' },
+  resultPending: { en: 'Pending', bn: 'বিবেচনাধীন' },
+  signatures: { en: 'Signatures', bn: 'স্বাক্ষর' },
+  factoryRep: { en: 'Factory representative', bn: 'ফ্যাক্টরি প্রতিনিধি' },
+  shareWithBuyer: { en: 'Share with buyer', bn: 'ক্রেতার সাথে শেয়ার করুন' },
+  summaryOfResults: { en: 'Summary of results', bn: 'ফলাফলের সারাংশ' },
+  clear: { en: 'Clear', bn: 'মুছুন' },
+  signHere: { en: 'Sign here', bn: 'এখানে স্বাক্ষর করুন' },
 } as const;
 
 export type TKey = keyof typeof dict;
