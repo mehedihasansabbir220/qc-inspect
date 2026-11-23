@@ -199,4 +199,18 @@ describe('sync engine', () => {
     await e.runOnce();
     expect(await db.outbox.count()).toBe(0);
   });
+
+  it('deletes on the server when the owner deletes a report (queued, works after offline)', async () => {
+    const del = vi.fn(async () => {});
+    adapter.deleteInspection = del;
+    const e = engine();
+    online = false;
+    await e.enqueue('delete', 'a');
+    await e.runOnce();
+    expect(del).not.toHaveBeenCalled();
+    online = true;
+    await e.runOnce();
+    expect(del).toHaveBeenCalledWith('a');
+    expect(await db.outbox.count()).toBe(0);
+  });
 });

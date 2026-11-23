@@ -66,7 +66,14 @@ QC Inspect is a web app that installs like a normal app — no Play Store needed
 ## 2. Doing an inspection
 
 ### Step 1 — Start a new inspection
-Tap the green **➕** button and fill in:
+Tap the green **➕** button. First pick the **product type**: Apparel tops, Apparel bottoms,
+Towels, Bed linen, Tableware & ceramics, or Furniture & décor. It decides which defects, checks and
+measurements you get. Then fill in the fields.
+
+**Buyer, Factory and Product are dropdowns where you can also type:** tap the field or the ▾ arrow
+to see all options, tap ✕ to clear it, or just type a new name and choose **Use "…"**. A new factory
+asks for its location and is saved for next time. Picking a known buyer (e.g. *Nordic Home AB*)
+applies their QA manual automatically: their AQL, level and extra buyer checks.
 
 | Field | Example | Tip |
 |---|---|---|
@@ -122,12 +129,23 @@ At the top you see **Pieces inspected 10 / 125**, the live result, and three cou
 > app closes, nothing is lost — just open it again.
 
 ### Step 3 — Measurements
-Open the **Measure** tab. For each point of measure (chest, body length, sleeve) enter the
-measurement of 5 pieces in cm. Values **outside tolerance turn red**, inside tolerance turn green.
+Open the **Measure** step. For each point of measure enter the measurement of 5 pieces (the unit,
+cm / mm / g, is shown next to the spec). Values **outside tolerance turn red**, inside tolerance
+turn green.
+
+**Your own measurement points:** tap **Edit points** to rename a point or change its spec, tolerance
+or unit, or 🗑 remove it. Tap **Add your own measurement point** for a new one, e.g. *Hanging loop length*.
 
 ### Step 4 — Checklist
-Open the **Checklist** tab and mark each line **✓ OK**, **✗ Not OK** or **N/A**
-(approved sample, quantity, carton marking, labels, drop test, metal detection).
+Open the **Checklist** step and mark each line **✓ OK**, **✗ Not OK** or **N/A**. Checks are grouped
+the same way as the report: Product conformity, Quantity, Packing & labels, Safety, **Product
+tests** (e.g. absorbency for towels, thermal shock for ceramics) and **Buyer requirements**.
+
+**Your own check:** at the bottom, type it (e.g. *Gift box print correct*), choose which report
+section it belongs to, and tap **Add**. It counts in the result like any other check.
+
+**A defect that isn't in the list?** On the Defects step tap **Other defect — describe it yourself**,
+type the description, and log it like any other defect.
 
 ### Step 5 — Finish & sign
 Open the **Finish** step:
@@ -138,6 +156,8 @@ Open the **Finish** step:
 4. **Signatures:** type the **factory representative's** name, then both of you sign on the screen
    with a finger. Tap *Clear* to sign again. Signatures appear on the PDF.
 5. Tap **Complete & queue for sync**.
+
+**Changed your mind?** At the bottom of the Finish step, **Discard this draft** deletes it (tap twice).
 
 **How the overall result is decided** (the same rule third-party inspection companies use):
 
@@ -153,7 +173,21 @@ The report opens. If you are offline it shows *pending* — it uploads by itself
 
 ## 3. Reports, PDFs and attachments
 
+### Finding a report
+The **Inspections** list shows every report with its factory, buyer, PO, style, **who created it**
+(👤 inspector) and **report number**.
+- **Search:** type a PO, style, buyer, factory, inspector or report number.
+- **Sort** (top right): newest, oldest, **fail / pending first** (good for managers), factory A–Z, buyer A–Z.
+- **Filters:** All · Draft · Completed · Shared (sent to you) · Team (managers).
+
 Open any completed inspection from the list to see its report.
+
+**Delete a report:** scroll to the bottom of the report → **Delete report** → tap again to confirm.
+Only the person who created it can delete it. It's removed from the server as soon as there's internet.
+
+**Google Drive & Sheets:** if your company set it up (*Settings → Google Workspace*), every completed
+report is saved to Drive in a folder per buyer, and added as a row to the company's QC Sheet. The
+report shows a link to the PDF in Drive; **Send again** re-sends it after changes.
 
 The bar at the bottom of every report:
 
@@ -244,7 +278,14 @@ tap the sync status at the top, or *Settings → Sync now*.
 
 ---
 
-## 6. Insights (for managers)
+## 6. For QA managers
+
+**Roles:** everyone starts as an **Inspector**. A **QA manager** sees and downloads every
+inspector's reports (read-only) under the **Team** filter, and assigns roles in **Settings → Team &
+roles**, which lists each person with their number of inspections and last activity. A manager can't
+change their own role, so the team can't be locked out by accident.
+
+### Insights
 
 The **Insights** tab summarises all completed inspections on the device:
 

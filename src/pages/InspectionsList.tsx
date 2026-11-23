@@ -10,14 +10,18 @@ import { db, type Inspection } from '../lib/db';
 import { useI18n } from '../lib/i18n';
 import { useNetwork } from '../lib/sync';
 import { tally } from '../lib/verdict';
-import { overallOf } from '../lib/report';
+import { overallOf, reportNumber } from '../lib/report';
+import { Search, User, X } from 'lucide-react';
 import { ArrowRight, PlayCircle } from 'lucide-react';
 
 type Filter = 'all' | 'draft' | 'completed' | 'shared' | 'team';
+type Sort = 'newest' | 'oldest' | 'result' | 'factory' | 'buyer';
 
 export function InspectionsList() {
   const { t, lang } = useI18n();
   const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<Sort>('newest');
   const { online } = useNetwork();
   const pending = usePendingCount();
   const session = useSession();
@@ -33,7 +37,26 @@ export function InspectionsList() {
   const lastDraft = inspections.find((i) => i.status === 'draft' && i.access?.role !== 'shared');
   const sharedCount = inspections.filter((i) => i.access?.role === 'shared').length;
   const teamCount = inspections.filter((i) => i.access?.role === 'team').length;
-  const shown = inspections.filter((i) => (filter === 'all' ? true : filter === 'shared' || filter === 'team' ? i.access?.role === filter : i.status === filter));
+  const q = query.trim().toLowerCase();
+  const factoryOf = (i: Inspection) => i.factoryName ?? factories.get(i.factoryId)?.name ?? '';
+  const RANK = { fail: 0, pending: 1, 'in-progress': 2, pass: 3 } as const;
+  const shown = inspections
+    .filter((i) => (filter === 'all' ? true : filter === 'shared' || filter === 'team' ? i.access?.role === filter : i.status === filter))
+    .filter((i) => !q || [i.poNumber, i.style, i.buyer, factoryOf(i), i.productCategory, i.inspector, i.access?.ownerEmail, reportNumber(i)].some((v) => v?.toLowerCase().includes(q)))
+    .sort((a, b) => {
+      switch (sort) {
+        case 'oldest':
+          return a.updatedAt - b.updatedAt;
+        case 'result':
+          return RANK[overallOf(a)] - RANK[overallOf(b)] || b.updatedAt - a.updatedAt;
+        case 'factory':
+          return factoryOf(a).localeCompare(factoryOf(b)) || b.updatedAt - a.updatedAt;
+        case 'buyer':
+          return (a.buyer ?? '~').localeCompare(b.buyer ?? '~') || b.updatedAt - a.updatedAt;
+        default:
+          return b.updatedAt - a.updatedAt;
+      }
+    });
 
   return (
     <>
@@ -86,9 +109,29 @@ export function InspectionsList() {
           <Kpi label="Open drafts" value={drafts} />
         </section>
 
-        <div className="mt-6 mb-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold">{t('inspections')}</h1>
-          <div className="seg max-w-[68%] overflow-x-auto text-xs whitespace-nowrap">
+        <div className="mt-6 mb-2 flex items-center justify-between gap-3">
+          <h1 className="text-lg font-bold">
+            {t('inspections')} <span className="text-sm font-medium text-ink-400">{shown.length}</span>
+          </h1>
+          <select className="rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs font-semibold" value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort reports">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="result">Fail / pending first</option>
+            <option value="factory">Factory A–Z</option>
+            <option value="buyer">Buyer A–Z</option>
+          </select>
+        </div>
+        <div className="relative mb-2">
+          <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-ink-400" />
+          <input className="field !py-2.5 !pl-10" placeholder="Search PO, style, buyer, factory, inspector…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search reports" />
+          {query && (
+            <button className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-ink-400 hover:bg-ink-100" onClick={() => setQuery('')} aria-label="Clear search">
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+        <div className="mb-3">
+          <div className="seg overflow-x-auto text-xs whitespace-nowrap">
             {(['all', 'draft', 'completed', ...(sharedCount ? ['shared'] : []), ...(teamCount ? ['team'] : [])] as Filter[]).map((f) => (
               <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)} className="!px-3 !py-1.5 capitalize">
                 {f === 'draft' ? t('draft') : f}
@@ -102,8 +145,8 @@ export function InspectionsList() {
             <div className="grid size-14 place-items-center rounded-2xl bg-brand-50 text-brand-600">
               <ShieldCheck className="size-7" />
             </div>
-            <p className="mt-3 font-semibold">Nothing here yet</p>
-            <p className="mt-1 text-sm text-ink-500">Tap + to start your first inspection — it works without internet.</p>
+            <p className="mt-3 font-semibold">{q ? `No report matches “${query}”` : 'Nothing here yet'}</p>
+            <p className="mt-1 text-sm text-ink-500">{q ? 'Try a PO number, style, buyer or factory.' : 'Tap + to start your first inspection — it works without internet.'}</p>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -148,6 +191,13 @@ function InspectionRow({ insp, factoryName, lang }: { insp: Inspection; factoryN
             <div className="truncate text-sm text-ink-500">
               {insp.buyer ? `${insp.buyer} · ` : ''}
               {insp.poNumber} · {insp.style} · {insp.productCategory}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1 truncate text-xs text-ink-400">
+              <User className="size-3 shrink-0" />
+              <span className="truncate">
+                {insp.inspector || 'Inspector'}
+                {insp.access?.ownerEmail && insp.access.role !== 'owner' ? ` · ${insp.access.ownerEmail}` : ''} · {reportNumber(insp)}
+              </span>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">

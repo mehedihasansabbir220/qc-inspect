@@ -52,6 +52,19 @@ export function createSupabaseAdapter(sb: SupabaseClient): SyncAdapter {
       );
     },
 
+    async deleteInspection(id) {
+      // Files first: the storage delete policy checks ownership via the inspection row.
+      for (const folder of ['photos', 'attachments']) {
+        const { data } = await sb.storage.from(BUCKET).list(`${id}/${folder}`, { limit: 1000 });
+        if (data?.length) {
+          const { error } = await sb.storage.from(BUCKET).remove(data.map((f) => `${id}/${folder}/${f.name}`));
+          if (error) throw mapError(error);
+        }
+      }
+      const { error } = await sb.from('inspections').delete().eq('id', id);
+      if (error) throw mapError(error);
+    },
+
     async downloadFile(path) {
       const { data, error } = await sb.storage.from(BUCKET).download(path);
       if (error) throw mapError(error);

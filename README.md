@@ -44,6 +44,25 @@ people who receive a shared report. This README is for developers.
   Enforced by Postgres Row Level Security — not just hidden buttons.
 - **Two-way sync** — edits by a colleague with edit permission flow back to the owner's device;
   local unsynced work is never overwritten; revoked reports disappear from the recipient's device.
+- **Inspection templates** (`src/lib/templates.ts`) — apparel tops / bottoms, towels, bed linen,
+  ceramics & tableware, furniture & décor: each with its own defect library, core checks, product
+  tests and points of measure (cm / mm / g). **Buyer profiles** apply a buyer's QA manual (AQL, level,
+  extra requirements). Each inspection stores a *snapshot*, so editing a template never changes an
+  issued report.
+- **Your own values everywhere** — buyer, factory and product are pick-or-type dropdowns (a new
+  factory is saved for next time); inspectors can add their own checks, measurement points and
+  "Other" defects during an inspection.
+- **Third-party-style report** — overall PASS / FAIL / PENDING from section results (quantity,
+  conformity, AQL, measurements, packing, safety, product tests, buyer requirements), signatures of
+  inspector and factory representative, numbered photo appendix.
+- **Roles** — inspector / QA manager. Managers see and download every inspector's reports
+  (read-only, *Team* filter) and assign roles. Enforced in Postgres.
+- **Google Workspace** — completed reports go to Google Drive (folder per buyer) and a Google Sheet,
+  via an Apps Script bridge in the company's own account (`integrations/google-apps-script`),
+  queued offline like every other upload.
+- **Report list** — search (PO, style, buyer, factory, inspector, report no.), sort (newest, oldest,
+  fail/pending first, factory, buyer), creator on every card, delete (owner only, two-tap,
+  removed from the server through the queue).
 
 ## Architecture
 
@@ -122,8 +141,8 @@ sequenceDiagram
   stale version → the app keeps the server copy and flags the conflict).
 - **Honest limit:** "no download" removes the download path (UI + file save), but anyone who can
   *view* a document can still screenshot it — the same model as Google Drive's "disable download".
-- **Verified:** `npm run test:db` runs 30 permission scenarios (owner, view-only, editor, revoked
-  editor, stranger) against real Postgres. It caught a real hole during development: a storage
+- **Verified:** `npm run test:db` runs 44 permission scenarios (owner, view-only, editor, revoked
+  editor, stranger, inspector vs. QA manager) against real Postgres. It caught a real hole during development: a storage
   policy that used a plain sub-query let strangers upload into another user's folder because RLS
   hid the row — fixed with a `SECURITY DEFINER` existence check.
 
@@ -159,11 +178,14 @@ sequenceDiagram
      copy it exactly from the Connect dialog (e.g. `aws-1-ap-northeast-1`). Use the Session pooler,
      not "Direct connection" (IPv6-only on many networks). Passwords containing `@ # / :` must be
      URL-encoded.
-4. **Authentication → Sign In / Providers → User Signups**: keep *Allow new users to sign up* ON,
+4. **First QA manager** (once, in the SQL editor):
+   `update public.profiles set role = 'manager' where email = 'you@company.com';`
+   After that, managers assign roles in the app (*Settings → Team & roles*).
+5. **Authentication → Sign In / Providers → User Signups**: keep *Allow new users to sign up* ON,
    *Allow anonymous sign-ins* OFF. For a demo, turn **Confirm email** OFF (new accounts can sign in
    immediately); turn it back ON for production.
-5. **Authentication → URL Configuration**: add your deployed URL and `http://localhost:5173`.
-6. Restart `npm run dev`. *Settings* now shows **Cloud account** instead of "Demo mode".
+6. **Authentication → URL Configuration**: add your deployed URL and `http://localhost:5173`.
+7. Restart `npm run dev`. *Settings* now shows **Cloud account** instead of "Demo mode".
    On Vercel/Netlify add the two `VITE_` variables (never `SUPABASE_DB_URL`).
 
 **Check the connection** (no secrets printed):
@@ -184,6 +206,15 @@ everything works except accounts and sending.
 **Storage durability.** The app requests `navigator.storage.persist()` so the browser won’t evict
 inspection data under storage pressure.
 
+## Docs
+
+| Document | For |
+|---|---|
+| [User Guide](docs/USER_GUIDE.md) | inspectors, managers, buyers |
+| [12-week delivery plan, weekly update, running costs](docs/PROJECT_PLAN.md) | management |
+| [Google Drive / Sheets setup](integrations/google-apps-script/README.md) | admin (5 min) |
+| [Bangla review sheet](docs/BANGLA_REVIEW.md) | native-speaking QC reviewer |
+
 ## Tech stack
 
 React 18 · TypeScript (strict) · Vite · Tailwind CSS v4 · Dexie (IndexedDB) · Workbox via
@@ -196,8 +227,8 @@ Vitest + fake-indexeddb · lucide icons. No runtime network dependencies
 ```bash
 npm install
 npm run dev        # http://localhost:5173 (also exposed on your LAN)
-npm test           # 37 unit tests: AQL tables, verdict, backoff, sync engine (push + pull + permissions)
-npm run test:db -- "host=127.0.0.1 port=5432 user=postgres"   # 30 RLS permission tests on local Postgres
+npm test           # 63 unit tests: AQL, verdict, report rules, templates, sync engine (push, pull, exports, delete)
+npm run test:db -- "host=127.0.0.1 port=5432 user=postgres"   # 44 RLS permission tests (sharing + roles) on local Postgres
 npm run build && npm run preview   # production build with service worker
 ```
 
@@ -212,7 +243,7 @@ Push to GitHub, then import the repo on **Vercel** or **Netlify** (framework: Vi
 
 ## How to verify it works
 
-1. `npm test` → 37 passed. `npm run build` → builds with a service worker.
+1. `npm test` → 63 passed. `npm run build` → builds with a service worker.
 2. **Offline:** `npm run preview`, open DevTools → Network → *Offline*, reload — the app still
    opens. Complete an inspection → pill shows *1 pending*. Go back online → *All synced*.
 3. **Flaky network:** Settings → *Flaky 3G* → watch retries with backoff in the outbox list.
@@ -224,7 +255,7 @@ Push to GitHub, then import the repo on **Vercel** or **Netlify** (framework: Vi
    Open the link in an incognito window, sign up as user B → report opens, **no download / edit**.
    On A, switch on *Edit* for that link → B (after sync) sees *Edit inspection*; B changes a comment
    → A sees it after the next sync. A taps 🗑 *Revoke* → the report disappears from B.
-7. **Permissions on the server:** `npm run test:db` → 30 passed.
+7. **Permissions on the server:** `npm run test:db` → 44 passed.
 
 ## Project layout
 

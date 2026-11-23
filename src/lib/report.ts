@@ -71,7 +71,7 @@ export function reportSections(insp: Inspection): ReportSection[] {
       result: measurement,
       remark: taken.length === 0 ? 'Not measured' : out === 0 ? `${taken.length} readings within tolerance` : `${out} of ${taken.length} readings out of tolerance`,
     },
-    { key: 'packing', title: 'Packing, marking & labels', result: fromChecks(answers('packing')), remark: remarkFor('packing', group('packing').map((i) => i.en.split(' ')[0]).join(', ') || '—') },
+    { key: 'packing', title: 'Packing, marking & labels', result: fromChecks(answers('packing')), remark: remarkFor('packing', `${group('packing').length} packing & labelling checks OK`) },
     {
       key: 'safety',
       title: 'Safety',

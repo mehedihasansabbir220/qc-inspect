@@ -116,7 +116,7 @@ export interface Photo {
 
 export interface OutboxItem {
   id?: number;
-  kind: 'inspection' | 'photo' | 'attachment' | 'export';
+  kind: 'inspection' | 'photo' | 'attachment' | 'export' | 'delete';
   refId: string;
   attempts: number;
   nextAttemptAt: number;

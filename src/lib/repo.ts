@@ -103,6 +103,15 @@ export async function queueGoogleExport(id: string) {
   void syncEngine.syncNow();
 }
 
+/** Owner deletes a report: removed from this device now, from the server when online (queued). */
+export async function deleteReport(id: string) {
+  const insp = await db.inspections.get(id);
+  if (!insp || accessOf(insp).role !== 'owner') throw new Error('Only the person who created this report can delete it');
+  await deleteInspection(id);
+  await syncEngine.enqueue('delete', id);
+  void syncEngine.runOnce();
+}
+
 export async function deleteInspection(id: string) {
   await db.transaction('rw', [db.inspections, db.photos, db.outbox, db.attachments], async () => {
     const photoIds = await db.photos.where('inspectionId').equals(id).primaryKeys();

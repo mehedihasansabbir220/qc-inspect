@@ -50,6 +50,11 @@ export const mockServer: SyncAdapter = {
     await serverDb.photos.put({ id: photo.id, inspectionId: photo.inspectionId, bytes: photo.bytes, receivedAt: Date.now() });
     return { url: `https://storage.example.com/qc/${photo.inspectionId}/${photo.id}.jpg` };
   },
+  async deleteInspection(id) {
+    await simulateTransport();
+    await serverDb.inspections.delete(id);
+    await serverDb.photos.where('inspectionId').equals(id).delete();
+  },
   async pushAttachment(a) {
     await simulateTransport(a.bytes);
     await serverDb.photos.put({ id: a.id, inspectionId: a.inspectionId, bytes: a.bytes, receivedAt: Date.now() });

@@ -14,7 +14,8 @@ import { categoriesOf, checklistOf, defectsOf } from '../lib/templates';
 import { uid } from '../lib/db';
 import { db, type Inspection, type Photo } from '../lib/db';
 import { useI18n } from '../lib/i18n';
-import { addDefect, completeInspection, removeDefect, updateInspection } from '../lib/repo';
+import { addDefect, completeInspection, deleteReport, removeDefect, updateInspection } from '../lib/repo';
+import { DeleteButton } from '../components/DeleteButton';
 import { tally } from '../lib/verdict';
 
 type Tab = 'defects' | 'measure' | 'checklist' | 'finish';
@@ -607,6 +608,13 @@ function FinishTab({ insp, outOfTol }: { insp: Inspection; outOfTol: number }) {
             {busy ? <Spinner /> : <Cloud className="size-5" />} {t('complete')}
           </button>
           {!canComplete && <p className="text-center text-xs text-ink-500">Inspect the full sample (or reach a fail) to complete.</p>}
+          <DeleteButton
+            label="Discard this draft"
+            onDelete={async () => {
+              await deleteReport(insp.id);
+              navigate('/', { replace: true });
+            }}
+          />
         </>
       ) : (
         <button className="btn-primary w-full" onClick={() => navigate(`/report/${insp.id}`)}>

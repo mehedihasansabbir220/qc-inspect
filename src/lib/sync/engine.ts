@@ -71,6 +71,10 @@ export function createSyncEngine({ db, adapter, isOnline, now = Date.now, pullIn
   }
 
   async function process(item: OutboxItem) {
+    if (item.kind === 'delete') {
+      await adapter.deleteInspection?.(item.refId);
+      return;
+    }
     if (item.kind === 'export') {
       await handlers.export?.(item.refId);
       return;

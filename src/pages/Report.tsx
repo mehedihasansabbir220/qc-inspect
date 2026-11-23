@@ -13,7 +13,8 @@ import { downloadBlob, reportFileName } from '../lib/files';
 import { useI18n } from '../lib/i18n';
 import { formatBytes } from '../lib/photos';
 import { DISCLAIMER, RESULT_LABEL, overallOf, reportNumber, reportSections } from '../lib/report';
-import { accessOf, addAttachment, queueGoogleExport, removeAttachment, updateInspection } from '../lib/repo';
+import { accessOf, addAttachment, deleteReport, queueGoogleExport, removeAttachment, updateInspection } from '../lib/repo';
+import { DeleteButton } from '../components/DeleteButton';
 import { tally } from '../lib/verdict';
 
 function Thumb({ photo, className = 'size-12' }: { photo?: Photo; className?: string }) {
@@ -408,6 +409,16 @@ export function Report() {
           >
             <Pencil className="size-4" /> Edit inspection
           </button>
+        )}
+
+        {isOwner && (
+          <DeleteButton
+            label="Delete report"
+            onDelete={async () => {
+              await deleteReport(insp.id);
+              navigate('/', { replace: true });
+            }}
+          />
         )}
 
         <p className="px-1 text-[11px] leading-relaxed text-ink-400">{DISCLAIMER}</p>

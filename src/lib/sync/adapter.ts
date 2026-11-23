@@ -30,6 +30,8 @@ export interface SyncAdapter {
   pushAttachment?(attachment: Attachment): Promise<void>;
   /** Two-way sync: records changed on the server since `since`, plus everything shared with me. */
   pullInspections?(since: string): Promise<RemoteInspection[]>;
+  /** Owner deletes an inspection with all its files. Must succeed if it's already gone. */
+  deleteInspection?(id: string): Promise<void>;
   /** Fetch a stored file (photo / attachment) by its storage path. */
   downloadFile?(path: string): Promise<Blob>;
 }

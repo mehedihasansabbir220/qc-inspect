@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 export type Lang = 'en' | 'bn';
 
-const dict = {
+export const DICT = {
   inspections: { en: 'Inspections', bn: 'পরিদর্শন' },
   insights: { en: 'Insights', bn: 'বিশ্লেষণ' },
   settings: { en: 'Settings', bn: 'সেটিংস' },
@@ -66,7 +66,7 @@ const dict = {
   signHere: { en: 'Sign here', bn: 'এখানে স্বাক্ষর করুন' },
 } as const;
 
-export type TKey = keyof typeof dict;
+export type TKey = keyof typeof DICT;
 
 interface I18n {
   lang: Lang;
@@ -98,7 +98,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   const value = useMemo<I18n>(
-    () => ({ lang, setLang, t: (k) => dict[k][lang], pick: (r) => r[lang] }),
+    () => ({ lang, setLang, t: (k) => DICT[k][lang], pick: (r) => r[lang] }),
     [lang, setLang],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
